@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.git/
+.gitignore
+.env*
+*.log
+coverage/
+*.tsbuildinfo
+.DS_Store
+README.md
+terraform/
+.github/

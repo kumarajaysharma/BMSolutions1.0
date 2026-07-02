@@ -1,0 +1,128 @@
+name: Deploy — GCS + Cloud CDN
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: production
+        type: choice
+        options: [production, staging]
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false          # Never cancel an in-flight deploy
+
+env:
+  NODE_VERSION: "22"
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCS_BUCKET: ${{ secrets.GCS_BUCKET_NAME }}        # e.g. bms-bnlvconsulting-website
+  CDN_BACKEND_SERVICE: ${{ secrets.CDN_BACKEND_SERVICE }}
+  WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WIF_PROVIDER }}
+  SERVICE_ACCOUNT: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+jobs:
+  # ─── Build ──────────────────────────────────────────────────────
+  build:
+    name: Build Production Bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      sha_short: ${{ steps.meta.outputs.sha_short }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract metadata
+        id: meta
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeCheck
+        run: npm run typecheck
+
+      - name: Lint (zero warnings)
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Upload dist artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ steps.meta.outputs.sha_short }}
+          path: dist/
+          retention-days: 30
+
+  # ─── Deploy ─────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to GCS
+    runs-on: ubuntu-24.04
+    needs: build
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://bms.bnlvconsulting.com
+
+    permissions:
+      contents: read
+      id-token: write          # Required for Workload Identity Federation
+
+    steps:
+      - name: Authenticate to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Download dist artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ needs.build.outputs.sha_short }}
+          path: dist/
+
+      - name: Sync to GCS (hashed assets — immutable cache)
+        run: |
+          gsutil -m -h "Cache-Control:public, max-age=31536000, immutable" \
+            rsync -r -c -d dist/assets/ \
+            gs://${{ env.GCS_BUCKET }}/assets/
+
+      - name: Sync to GCS (HTML and root files — no-cache)
+        run: |
+          gsutil -m -h "Cache-Control:no-cache, no-store, must-revalidate" \
+            rsync -r -c -d dist/ \
+            gs://${{ env.GCS_BUCKET }}/ \
+            --exclude "assets/**"
+
+      - name: Invalidate Cloud CDN cache
+        run: |
+          gcloud compute url-maps invalidate-cdn-cache \
+            ${{ env.CDN_BACKEND_SERVICE }} \
+            --path "/*" \
+            --project=${{ env.GCP_PROJECT_ID }} \
+            --async
+
+      - name: Deployment summary
+        run: |
+          echo "## Deployment Complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **SHA:** ${{ needs.build.outputs.sha_short }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Bucket:** gs://${{ env.GCS_BUCKET }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **URL:** https://bms.bnlvconsulting.com" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **CDN cache:** invalidated" >> "$GITHUB_STEP_SUMMARY"

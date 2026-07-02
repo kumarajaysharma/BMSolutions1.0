@@ -1,0 +1,114 @@
+{
+  "$schema": "https://bms.bnlvconsulting.com/schema/capabilities/v1.json",
+  "manifest_version": "1.0.0",
+  "generated_at": "2026-07-02T00:00:00Z",
+  "organization": {
+    "group": "BNLV Group",
+    "division": "BMSolutions",
+    "subdomain": "bms.bnlvconsulting.com",
+    "api_base": "https://api.bms.bnlvconsulting.com"
+  },
+  "infrastructure": {
+    "orchestrator": "JINTO",
+    "cloud_provider": "GCP",
+    "compute": "GKE — Private Cluster, Dataplane V2",
+    "database": "Cloud SQL — PostgreSQL 16, Regional HA",
+    "cache": "Memorystore Redis",
+    "secrets": "External Secrets Operator via Helm",
+    "cdn": "Cloud CDN + Cloudflare WAF",
+    "iac": "Terraform >= 1.9"
+  },
+  "security_posture": {
+    "auth_protocol": "OIDC/JWKS",
+    "token_revocation": "JTI blocklist via Redis",
+    "cryptographic_backend": "Cloud KMS HSM — FIPS 140-3",
+    "cmek_keys": 3,
+    "secret_store": "GCP Secret Manager — External Secrets Operator",
+    "audit_log": "SHA-256 hash-chained — immutable",
+    "network_policy": "default-deny Kubernetes NetworkPolicy",
+    "pod_security": "restricted enforcement",
+    "image_provenance": "Binary Authorization — KMS attestor",
+    "zero_trust": true,
+    "mtls": "Workload Identity Federation"
+  },
+  "compliance_alignment": [
+    { "framework": "SOC 2 Type II", "status": "architected_to_align" },
+    { "framework": "ISO 27001",     "status": "architected_to_align" },
+    { "framework": "FIPS 140-3",    "status": "hsm_backed_primitives" },
+    { "framework": "GDPR",          "status": "controls_implemented" },
+    { "framework": "NIST SP 800-207 Zero Trust", "status": "fully_enforced" }
+  ],
+  "platforms": [
+    {
+      "id": "jinto",
+      "name": "JINTO",
+      "full_name": "Job Intelligence & Tenant Orchestration",
+      "category": "Enterprise Infrastructure",
+      "status": "live",
+      "role": "core_orchestrator",
+      "api_prefix": "/v1/jinto"
+    },
+    {
+      "id": "limsy",
+      "name": "LIMSY",
+      "full_name": "Lab Information & Management System",
+      "category": "Healthcare & Life Sciences",
+      "status": "live",
+      "api_prefix": "/v1/limsy"
+    },
+    {
+      "id": "nidhivan",
+      "name": "Nidhivan R&D",
+      "full_name": "Research, Development & Investment Intelligence",
+      "category": "Financial Technology",
+      "status": "live",
+      "api_prefix": "/v1/nidhivan"
+    },
+    {
+      "id": "kundali-pro",
+      "name": "KundaliPro",
+      "full_name": "AI-Powered Vedic Astrology Intelligence Platform",
+      "category": "AI & Automation",
+      "status": "live",
+      "api_prefix": "/v1/kundali"
+    },
+    {
+      "id": "blueprint",
+      "name": "Blueprint",
+      "full_name": "Enterprise Business Architecture & Strategy Platform",
+      "category": "Knowledge Management",
+      "status": "beta",
+      "api_prefix": "/v1/blueprint"
+    },
+    {
+      "id": "project-perl",
+      "name": "Project PERL",
+      "full_name": "Predictive Enterprise Resource & Logistics Intelligence",
+      "category": "AI & Automation",
+      "status": "beta",
+      "api_prefix": "/v1/perl"
+    },
+    {
+      "id": "vihang",
+      "name": "Vihang",
+      "full_name": "Aerial Intelligence & UAV Management Platform",
+      "category": "Enterprise Infrastructure",
+      "status": "development",
+      "api_prefix": "/v1/vihang"
+    },
+    {
+      "id": "astrology-academy",
+      "name": "Astrology Academy",
+      "full_name": "Structured Vedic Astrology Education Platform",
+      "category": "Knowledge Management",
+      "status": "beta",
+      "api_prefix": "/v1/academy"
+    }
+  ],
+  "sla": {
+    "availability_target": "99.99%",
+    "topology": "single-region (asia-south1)",
+    "rpo_minutes": 60,
+    "rto_minutes": 30
+  }
+}

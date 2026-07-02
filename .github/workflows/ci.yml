@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  # ─── Quality Gates ──────────────────────────────────────────────
+  quality:
+    name: TypeCheck · Lint · Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npm run typecheck
+
+      - name: ESLint (zero warnings)
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+      - name: Upload build artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+          retention-days: 7
+
+  # ─── Size Budget ────────────────────────────────────────────────
+  size-check:
+    name: Bundle Size Budget
+    runs-on: ubuntu-24.04
+    needs: quality
+    timeout-minutes: 5
+
+    steps:
+      - name: Download dist
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+
+      - name: Assert gzip budget ≤ 200 kB
+        run: |
+          TOTAL=$(find dist/assets -name "*.js" | xargs gzip -c | wc -c)
+          echo "Total JS gzip: ${TOTAL} bytes"
+          if [ "${TOTAL}" -gt 204800 ]; then
+            echo "::error::JS bundle exceeds 200 kB gzip budget (${TOTAL} bytes)"
+            exit 1
+          fi
+          echo "::notice::Bundle within budget: ${TOTAL} bytes gzip"
