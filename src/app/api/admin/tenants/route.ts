@@ -69,8 +69,8 @@ export async function PATCH(req: NextRequest) {
   const db = await getDb();
 
   const body = await req.json();
-  const patch: Partial<{ status: string; plan: string }> = {};
-  if (body.status) patch.status = body.status;
+  const patch: Partial<{ status: "active" | "suspended" | "deleted"; plan: string }> = {};
+  if (body.status) patch.status = body.status as "active" | "suspended" | "deleted";
   if (body.plan) patch.plan = body.plan;
 
   const [row] = await db
