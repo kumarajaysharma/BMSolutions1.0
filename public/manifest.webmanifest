@@ -1,0 +1,34 @@
+{
+  "id": "com.bnlvgroup.bms.enterprise",
+  "name": "BMS (Business Management Solutions) — A BNLV Group of Company",
+  "short_name": "BMS Enterprise",
+  "description": "True Professional Enterprise SaaS Studio by BNLV Group of Company: visual builder, Claude Fable 5 AI routing, CI/CD, observability and cross-platform readiness.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#fdfbf7",
+  "theme_color": "#1d2c44",
+  "categories": ["business", "productivity", "developer", "enterprise"],
+  "lang": "en",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/brand/bms-logo.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    { "name": "Schedule Request", "url": "/#schedule", "description": "Book time with the BMS team" },
+    { "name": "Studio Overview", "url": "/studio", "description": "Open the BMS Enterprise studio" },
+    { "name": "Readiness Audit", "url": "/audit", "description": "Open production readiness audit" }
+  ]
+}

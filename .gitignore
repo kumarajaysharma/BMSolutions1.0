@@ -1,0 +1,27 @@
+# Dependencies
+/node_modules
+.pnp
+.pnp.js
+
+# Next.js build output & cache
+/.next/
+/out/
+
+# Production build
+/build
+
+# Local environment files (crucial to protect secrets)
+.env*.local
+.env
+
+# Vercel deployment folder
+.vercel
+
+# Editor & OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# TypeScript cache
+*.tsbuildinfo

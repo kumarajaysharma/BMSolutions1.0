@@ -1,0 +1,133 @@
+@import "tailwindcss";
+
+/* ── Serene Sand design system ─────────────────────────────────────
+   Warm neutrals + slate, with light maroon, light navy and forest
+   jade accents. Professional, research-oriented, royal & high-tech. */
+
+@theme {
+  /* warm neutrals */
+  --color-sand-50: #fdfbf7;
+  --color-sand-100: #f8f4ec;
+  --color-sand-200: #efe8da;
+  --color-sand-300: #e2d8c4;
+
+  /* light maroon */
+  --color-maroon-50: #faf3f4;
+  --color-maroon-100: #f3e4e7;
+  --color-maroon-200: #e5c9cf;
+  --color-maroon-400: #b57785;
+  --color-maroon-500: #a05a6b;
+  --color-maroon-600: #8c4457;
+  --color-maroon-700: #733648;
+
+  /* light navy */
+  --color-navy-50: #f3f6fa;
+  --color-navy-100: #e6ecf5;
+  --color-navy-200: #cdd9ea;
+  --color-navy-400: #6d87ac;
+  --color-navy-500: #4c6a94;
+  --color-navy-600: #3a5680;
+  --color-navy-700: #2e4468;
+  --color-navy-800: #243653;
+  --color-navy-900: #1d2c44;
+
+  /* forest jade */
+  --color-jade-50: #f1f8f4;
+  --color-jade-100: #e2f0e8;
+  --color-jade-200: #c5e1d2;
+  --color-jade-400: #63a385;
+  --color-jade-500: #46896c;
+  --color-jade-600: #357257;
+  --color-jade-700: #2b5c47;
+}
+
+/* ── Aesthetic themes ──────────────────────────────────────────────
+   The primary scale (navy-*) drives headings, buttons and chrome;
+   re-tinting it transforms the whole studio. Serene Sand = default. */
+
+html[data-theme="royal-maroon"] {
+  --color-sand-50: #fdf8f7;
+  --color-sand-100: #f9efee;
+  --color-sand-200: #f0dfdd;
+  --color-sand-300: #e3caC7;
+  --color-navy-50: #faf1f3;
+  --color-navy-100: #f3e0e5;
+  --color-navy-200: #e4c0cb;
+  --color-navy-400: #b06a80;
+  --color-navy-500: #9a5269;
+  --color-navy-600: #833f55;
+  --color-navy-700: #6d3145;
+  --color-navy-800: #582638;
+  --color-navy-900: #431c2b;
+  --color-maroon-400: #b57785;
+  --color-maroon-500: #a05a6b;
+  --color-maroon-600: #8c4457;
+  --color-maroon-700: #733648;
+}
+
+html[data-theme="forest-jade"] {
+  --color-sand-50: #f9fbf8;
+  --color-sand-100: #f1f6f0;
+  --color-sand-200: #e2ecdf;
+  --color-sand-300: #cdddc8;
+  --color-navy-50: #f0f7f3;
+  --color-navy-100: #e0efe7;
+  --color-navy-200: #c2ddce;
+  --color-navy-400: #5f9a7e;
+  --color-navy-500: #468066;
+  --color-navy-600: #366b53;
+  --color-navy-700: #2b5643;
+  --color-navy-800: #224536;
+  --color-navy-900: #1a352a;
+  --color-jade-400: #63a385;
+  --color-jade-500: #46896c;
+  --color-jade-600: #357257;
+  --color-jade-700: #2b5c47;
+}
+
+html[data-theme="navy-blue"] {
+  --color-sand-50: #f8fafc;
+  --color-sand-100: #f0f4f9;
+  --color-sand-200: #e1e8f1;
+  --color-sand-300: #cbd7e6;
+  --color-navy-50: #f0f4fa;
+  --color-navy-100: #e2eaf6;
+  --color-navy-200: #c4d3ec;
+  --color-navy-400: #5f7cb8;
+  --color-navy-500: #44639f;
+  --color-navy-600: #35518a;
+  --color-navy-700: #2a4172;
+  --color-navy-800: #21335b;
+  --color-navy-900: #192745;
+  --color-maroon-50: #f2f4fa;
+  --color-maroon-100: #e4e8f5;
+  --color-maroon-200: #c9d1ea;
+  --color-maroon-400: #7381b8;
+  --color-maroon-500: #5b6aa6;
+  --color-maroon-600: #4a5791;
+  --color-maroon-700: #3c4777;
+}
+
+body {
+  background-color: var(--color-sand-50);
+  color: #334155; /* slate-700 */
+  font-feature-settings: "cv02", "cv03", "cv11";
+}
+
+::selection {
+  background: var(--color-navy-100);
+  color: var(--color-navy-700);
+}
+
+/* soft scrollbars for panels */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-sand-300);
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
