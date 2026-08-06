@@ -128,7 +128,6 @@ async function run() {
           tenantId: TARGET_TENANT_ID,
           name: "Global System Layout Space",
           description: "Global brand layout assets",
-          status: "deployed"
         }).returning();
       }
 
