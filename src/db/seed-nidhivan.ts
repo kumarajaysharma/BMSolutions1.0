@@ -173,14 +173,13 @@ async function seedNidhivan() {
     ]);
     console.log(`✅ Seeded CPWD DSR Execution Items`);
 
-    // Insert Financial Metrics (Satisfies non-nullable reportedBy FK)
+    // Insert Financial Metrics (Satisfies non-nullable reportedBy FK and required reportingPeriod)
     await tx.insert(nidhivanFinancialMetrics).values({
       tenantId: NIDHIVAN_TENANT_ID,
       projectId: project.id,
       reportedBy: adminUserId,
-      plannedExpenditurePaise: 4676075000,
+      reportingPeriod: "Q1-2026",
       projectedIrrPercent: "14.50",
-      npvPaise: 125000000, // Example NPV baseline
     });
     console.log(`✅ Seeded Financial Metrics`);
 
