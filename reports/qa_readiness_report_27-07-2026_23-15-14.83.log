@@ -1,0 +1,195 @@
+[INFO] Logging output to: reports\qa_readiness_report_27-07-2026_23-15-14.83.log 
+[PHASE 1/6] Verifying System Environment and Toolchains... 
+[PHASE 2/6] Executing Static Code Analysis and Linting... 
+
+> lint
+> eslint .
+
+[PHASE 3/6] Running Enterprise Security Audit... 
+npm warn config production Use `--omit=dev` instead.
+# npm audit report
+
+next  9.3.4-canary.0 - 16.3.0-preview.7
+Severity: high
+Next.js: Middleware / Proxy bypass in App Router applications using Turbopack and single locale - https://github.com/advisories/GHSA-6gpp-xcg3-4w24
+Next.js: Denial of Service in App Router using Server Actions - https://github.com/advisories/GHSA-m99w-x7hq-7vfj
+Next.js: Server-Side Request Forgery in Server Actions on custom servers - https://github.com/advisories/GHSA-89xv-2m56-2m9x
+Next.js: Cache confusion of response bodies for requests with bodies - https://github.com/advisories/GHSA-68g3-v927-f742
+Next.js: Cache confusion of response bodies for requests with bodies containing invalid UTF-8 byte sequences - https://github.com/advisories/GHSA-4633-3j49-mh5q
+Next.js: Unbounded Server Action payload in Edge runtime - https://github.com/advisories/GHSA-4c39-4ccg-62r3
+Next.js: Server-Side Request Forgery in rewrites via attacker-controlled destination hostname - https://github.com/advisories/GHSA-p9j2-gv94-2wf4
+Next.js: Denial of Service in the Image Optimization API using SVGs - https://github.com/advisories/GHSA-q8wf-6r8g-63ch
+Next.js: Unauthenticated disclosure of internal Server Function endpoints - https://github.com/advisories/GHSA-955p-x3mx-jcvp
+Depends on vulnerable versions of postcss
+Depends on vulnerable versions of sharp
+fix available via `npm audit fix --force`
+Will install next@16.2.12, which is outside the stated dependency range
+node_modules/next
+
+postcss  <=8.5.17
+Severity: high
+PostCSS has XSS via Unescaped </style> in its CSS Stringify Output - https://github.com/advisories/GHSA-qx2v-qp2m-jg93
+PostCSS: Arbitrary file read and information disclosure via attacker-controlled sourceMappingURL in CSS comments - https://github.com/advisories/GHSA-6g55-p6wh-862q
+PostCSS: Path Traversal in Previous Source Map Auto-Loading (sourceMappingURL) leads to Arbitrary .map File Disclosure - https://github.com/advisories/GHSA-r28c-9q8g-f849
+fix available via `npm audit fix --force`
+Will install next@16.2.12, which is outside the stated dependency range
+node_modules/next/node_modules/postcss
+
+sharp  <0.35.0
+Severity: high
+sharp inherited vulnerabilities in libvips: CVE-2026-33327, CVE-2026-33328, CVE-2026-35590, CVE-2026-35591 - https://github.com/advisories/GHSA-f88m-g3jw-g9cj
+fix available via `npm audit fix --force`
+Will install next@16.2.12, which is outside the stated dependency range
+node_modules/sharp
+
+3 high severity vulnerabilities
+
+To address all issues, run:
+  npm audit fix --force
+[WARNING] High-severity vulnerabilities detected in dependencies. 
+[PHASE 4/6] Executing Test Suites... 
+
+> test:ci
+> echo "No test suite configured yet" && exit 0
+
+"No test suite configured yet" 
+[PHASE 5/6] Performing Operational Stability and Smoke Load Testing... 
+
+> test:load:smoke
+> echo "No load test suite configured yet" && exit 0
+
+"No load test suite configured yet" 
+[PHASE 6/6] Generating Enterprise Production Build Artifacts... 
+
+> build
+> next build
+
+▲ Next.js 16.2.6 (Turbopack)
+- Environments: .env.local, .env.production, .env
+
+⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+  Creating an optimized production build ...
+
+> Build error occurred
+Error: Turbopack build failed with 7 errors:
+./src/app/api/nidhivan/boqs/route.ts:5:1
+Module not found: Can't resolve '@/lib/auth/tenant'
+  [90m3 |[0m [36mimport[0m { db } [36mfrom[0m [32m'@/db'[0m;
+  [90m4 |[0m [36mimport[0m { boqs } [36mfrom[0m [32m'@/db/schema'[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { withTenant } [36mfrom[0m [32m'@/lib/auth/tenant'[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36masync[0m [36mfunction[0m [33mPOST[0m(req: [33mNextRequest[0m) {
+  [90m8 |[0m   [36mtry[0m {
+
+Import map: aliased to relative './src/lib/auth/tenant' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./src/app/api/nidhivan/dprs/route.ts:6:1
+Module not found: Can't resolve '@/lib/auth/tenant'
+  [90m4 |[0m [36mimport[0m { dprs } [36mfrom[0m [32m'@/db/schema'[0m;
+  [90m5 |[0m [36mimport[0m { eq } [36mfrom[0m [32m'drizzle-orm'[0m;
+[31m[1m>[0m [90m6 |[0m [36mimport[0m { withTenant } [36mfrom[0m [32m'@/lib/auth/tenant'[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m7 |[0m
+  [90m8 |[0m [36mexport[0m [36masync[0m [36mfunction[0m [33mPOST[0m(req: [33mNextRequest[0m) {
+  [90m9 |[0m   [36mtry[0m {
+
+Import map: aliased to relative './src/lib/auth/tenant' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./src/app/api/nidhivan/metrics/route.ts:5:1
+Module not found: Can't resolve '@/lib/auth/tenant'
+  [90m3 |[0m [36mimport[0m { financialMetrics } [36mfrom[0m [32m'@/db/schema'[0m;
+  [90m4 |[0m [36mimport[0m { and, eq } [36mfrom[0m [32m'drizzle-orm'[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { withTenant } [36mfrom[0m [32m'@/lib/auth/tenant'[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36masync[0m [36mfunction[0m [33mGET[0m(req: [33mNextRequest[0m) {
+  [90m8 |[0m   [36mtry[0m {
+
+Import map: aliased to relative './src/lib/auth/tenant' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./src/app/api/nidhivan/projects/route.ts:5:1
+Module not found: Can't resolve '@/lib/auth/tenant'
+  [90m3 |[0m [36mimport[0m { projects } [36mfrom[0m [32m'@/db/schema'[0m;
+  [90m4 |[0m [36mimport[0m { and, eq } [36mfrom[0m [32m'drizzle-orm'[0m;
+[31m[1m>[0m [90m5 |[0m [36mimport[0m { withTenant } [36mfrom[0m [32m'@/lib/auth/tenant'[0m; [90m// Assumes standard security wrapper[0m
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m [36mimport[0m { safeJson } [36mfrom[0m [32m'@/lib/utils/safe-json'[0m;
+  [90m7 |[0m
+  [90m8 |[0m [36mexport[0m [36masync[0m [36mfunction[0m [33mGET[0m(req: [33mNextRequest[0m) {
+
+Import map: aliased to relative './src/lib/auth/tenant' inside of [project]/
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./src/app/api/nidhivan/boqs/route.ts:4:1
+Export boqs doesn't exist in target module
+  [90m2 |[0m [36mimport[0m crypto [36mfrom[0m [32m'crypto'[0m;
+  [90m3 |[0m [36mimport[0m { db } [36mfrom[0m [32m'@/db'[0m;
+[31m[1m>[0m [90m4 |[0m [36mimport[0m { boqs } [36mfrom[0m [32m'@/db/schema'[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m5 |[0m [36mimport[0m { withTenant } [36mfrom[0m [32m'@/lib/auth/tenant'[0m;
+  [90m6 |[0m
+  [90m7 |[0m [36mexport[0m [36masync[0m [36mfunction[0m [33mPOST[0m(req: [33mNextRequest[0m) {
+
+The export boqs was not found in module [project]/src/db/schema.ts [app-route] (ecmascript).
+Did you mean to import nidhivanBoqsRelations?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+
+./src/app/api/nidhivan/dprs/route.ts:4:1
+Export dprs doesn't exist in target module
+  [90m2 |[0m [36mimport[0m crypto [36mfrom[0m [32m'crypto'[0m;
+  [90m3 |[0m [36mimport[0m { db } [36mfrom[0m [32m'@/db'[0m;
+[31m[1m>[0m [90m4 |[0m [36mimport[0m { dprs } [36mfrom[0m [32m'@/db/schema'[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m5 |[0m [36mimport[0m { eq } [36mfrom[0m [32m'drizzle-orm'[0m;
+  [90m6 |[0m [36mimport[0m { withTenant } [36mfrom[0m [32m'@/lib/auth/tenant'[0m;
+  [90m7 |[0m
+
+The export dprs was not found in module [project]/src/db/schema.ts [app-route] (ecmascript).
+Did you mean to import nidhivanDprsRelations?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+
+./src/app/api/nidhivan/metrics/route.ts:3:1
+Export financialMetrics doesn't exist in target module
+  [90m1 |[0m [36mimport[0m { [33mNextRequest[0m, [33mNextResponse[0m } [36mfrom[0m [32m'next/server'[0m;
+  [90m2 |[0m [36mimport[0m { db } [36mfrom[0m [32m'@/db'[0m;
+[31m[1m>[0m [90m3 |[0m [36mimport[0m { financialMetrics } [36mfrom[0m [32m'@/db/schema'[0m;
+  [90m  |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m4 |[0m [36mimport[0m { and, eq } [36mfrom[0m [32m'drizzle-orm'[0m;
+  [90m5 |[0m [36mimport[0m { withTenant } [36mfrom[0m [32m'@/lib/auth/tenant'[0m;
+  [90m6 |[0m
+
+The export financialMetrics was not found in module [project]/src/db/schema.ts [app-route] (ecmascript).
+Did you mean to import nidhivanFinancialMetrics?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+
+    at <unknown> (./src/app/api/nidhivan/boqs/route.ts:5:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./src/app/api/nidhivan/dprs/route.ts:6:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./src/app/api/nidhivan/metrics/route.ts:5:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./src/app/api/nidhivan/projects/route.ts:5:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./src/app/api/nidhivan/boqs/route.ts:4:1)
+    at <unknown> (./src/app/api/nidhivan/dprs/route.ts:4:1)
+    at <unknown> (./src/app/api/nidhivan/metrics/route.ts:3:1)
+[FAILURE] Production artifact build compilation failed. 

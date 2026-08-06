@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { builderComponents, auditLogs } from "@/db/schema";
+import { builderComponents, auditLogs, projects } from "@/db/schema";
 import { asc, eq } from "drizzle-orm";
 import { COMPONENT_CATALOG } from "@/lib/codegen";
 import { invalidateCache } from "@/lib/server-cache";
@@ -28,24 +28,44 @@ export async function POST(
   if (!catalog) {
     return NextResponse.json({ error: "unknown component type" }, { status: 400 });
   }
+
+  // Resolve tenantId securely from headers or project lookup
+  const tenantIdHeader = req.headers.get("x-tenant-id");
+  let tenantId = tenantIdHeader ? Number(tenantIdHeader) : 1;
+
+  const [projectRow] = await db
+    .select({ tenantId: projects.tenantId })
+    .from(projects)
+    .where(eq(projects.id, Number(id)))
+    .limit(1);
+
+  if (projectRow) {
+    tenantId = projectRow.tenantId;
+  }
+
   const existing = await db
     .select()
     .from(builderComponents)
     .where(eq(builderComponents.projectId, Number(id)));
+
   const [row] = await db
     .insert(builderComponents)
     .values({
+      tenantId,
       projectId: Number(id),
       type: body.type,
       props: { ...catalog.defaults },
       sortOrder: existing.length,
     })
     .returning();
+
   await db.insert(auditLogs).values({
+    tenantId,
     actor: "visual-builder",
     action: `component.add:${body.type}`,
     target: `project:${id}`,
   });
+
   invalidateCache("projects");
   return NextResponse.json(row, { status: 201 });
 }
@@ -73,14 +93,32 @@ export async function DELETE(
 ) {
   const { id } = await params;
   const body = await req.json();
+
+  // Resolve tenantId securely from headers or project lookup
+  const tenantIdHeader = req.headers.get("x-tenant-id");
+  let tenantId = tenantIdHeader ? Number(tenantIdHeader) : 1;
+
+  const [projectRow] = await db
+    .select({ tenantId: projects.tenantId })
+    .from(projects)
+    .where(eq(projects.id, Number(id)))
+    .limit(1);
+
+  if (projectRow) {
+    tenantId = projectRow.tenantId;
+  }
+
   await db
     .delete(builderComponents)
     .where(eq(builderComponents.id, Number(body.componentId)));
+
   await db.insert(auditLogs).values({
+    tenantId,
     actor: "visual-builder",
     action: "component.remove",
     target: `project:${id}`,
   });
+
   invalidateCache("projects");
   return NextResponse.json({ ok: true });
 }

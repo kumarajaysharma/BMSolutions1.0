@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { Mail, Phone, MapPin } from 'lucide-react';
 
 export default function Footer() {
@@ -12,10 +13,12 @@ export default function Footer() {
           {/* Company Info */}
           <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <img 
+              <Image 
                 src="/images/bnlv-holographic-logo.png" 
                 alt="BNLV Group" 
-                className="w-10 h-10 rounded-lg"
+                width={40}
+                height={40}
+                className="w-10 h-10 rounded-lg object-contain"
               />
               <div className="flex flex-col">
                 <span className="text-lg font-bold bg-gradient-to-r from-blue-400 via-emerald-400 to-amber-400 bg-clip-text text-transparent">BNLV</span>

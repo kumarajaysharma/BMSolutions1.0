@@ -6,11 +6,11 @@
  * DELETE — destroys an environment
  *
  * SECURITY CHANGES:
- *   - All reads/writes scoped via withTenant.
- *   - Cache key is tenant-scoped.
- *   - Provisioning status auto-promotion runs inside withTenant so the
- *     status update and audit log are atomic.
- *   - Project ownership verified before provision/destroy.
+ *    - All reads/writes scoped via withTenant.
+ *    - Cache key is tenant-scoped.
+ *    - Provisioning status auto-promotion runs inside withTenant so the
+ *      status update and audit log are atomic.
+ *    - Project ownership verified before provision/destroy.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -62,9 +62,9 @@ export async function GET(req: NextRequest) {
 
       const allProjects = await tx.select().from(projects);
 
-      return rows.map((e) => ({
+      return rows.map((e: typeof rows[number]) => ({
         ...e,
-        projectName: allProjects.find((p) => p.id === e.projectId)?.name ?? "",
+        projectName: allProjects.find((p: typeof allProjects[number]) => p.id === e.projectId)?.name ?? "",
       }));
     })
   );

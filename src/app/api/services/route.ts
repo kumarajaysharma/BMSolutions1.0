@@ -30,31 +30,38 @@ export async function GET() {
 export async function POST(req: Request) {
   const body = await req.json(); // { resource, ...fields }
   invalidateCache("services");
+
+  const tenantIdHeader = req.headers.get("x-tenant-id");
+  const tenantId = tenantIdHeader ? Number(tenantIdHeader) : Number(body.tenantId ?? 1);
+
   switch (body.resource) {
     case "key": {
       const prefix = `fs_live_${rand()}`;
       const [row] = await db
         .insert(apiKeys)
         .values({
+          tenantId,
           name: String(body.name ?? "Untitled key").slice(0, 80),
           prefix,
+          keyHash: rand() + rand(),
           scopes: Array.isArray(body.scopes) ? body.scopes : ["read"],
           rateLimit: Number(body.rateLimit) || 1000,
         })
         .returning();
       await db.insert(auditLogs).values({
+        tenantId,
         actor: "api-gateway",
         action: "apikey.create",
         target: prefix,
         severity: "warn",
       });
-      // Full key shown exactly once — zero-trust: never stored in plaintext
       return NextResponse.json({ ...row, fullKey: `${prefix}_${rand()}${rand()}` }, { status: 201 });
     }
     case "flag": {
       const [row] = await db
         .insert(featureFlags)
         .values({
+          tenantId,
           key: String(body.key ?? "new-flag")
             .toLowerCase()
             .replace(/[^a-z0-9-]+/g, "-")
@@ -65,7 +72,7 @@ export async function POST(req: Request) {
           environments: ["development"],
         })
         .returning();
-      await db.insert(auditLogs).values({ actor: "flag-service", action: "flag.create", target: row.key });
+      await db.insert(auditLogs).values({ tenantId, actor: "flag-service", action: "flag.create", target: row.key });
       return NextResponse.json(row, { status: 201 });
     }
     case "secret": {
@@ -73,12 +80,13 @@ export async function POST(req: Request) {
       const [row] = await db
         .insert(vaultSecrets)
         .values({
+          tenantId,
           name,
           maskedValue: `••••••••${rand().slice(0, 4)}`,
           environment: body.environment ?? "all",
         })
         .returning();
-      await db.insert(auditLogs).values({ actor: "vault", action: "secret.create", target: name, severity: "warn" });
+      await db.insert(auditLogs).values({ tenantId, actor: "vault", action: "secret.create", target: name, severity: "warn" });
       return NextResponse.json(row, { status: 201 });
     }
     case "hook": {
@@ -88,12 +96,13 @@ export async function POST(req: Request) {
       const [row] = await db
         .insert(webhookEndpoints)
         .values({
+          tenantId,
           url: url.slice(0, 300),
           events: Array.isArray(body.events) && body.events.length ? body.events : ["deploy.success"],
-          signingSecret: `whsec_${rand()}${rand()}`,
+          signingSecretHash: `whsec_${rand()}${rand()}`,
         })
         .returning();
-      await db.insert(auditLogs).values({ actor: "webhook-service", action: "webhook.create", target: url });
+      await db.insert(auditLogs).values({ tenantId, actor: "webhook-service", action: "webhook.create", target: url });
       return NextResponse.json(row, { status: 201 });
     }
   }
@@ -103,6 +112,10 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   const body = await req.json();
   invalidateCache("services");
+
+  const tenantIdHeader = req.headers.get("x-tenant-id");
+  const tenantId = tenantIdHeader ? Number(tenantIdHeader) : Number(body.tenantId ?? 1);
+
   switch (body.resource) {
     case "key": {
       const [row] = await db
@@ -110,7 +123,7 @@ export async function PATCH(req: Request) {
         .set({ status: "revoked" })
         .where(eq(apiKeys.id, Number(body.id)))
         .returning();
-      await db.insert(auditLogs).values({ actor: "api-gateway", action: "apikey.revoke", target: row.prefix, severity: "warn" });
+      await db.insert(auditLogs).values({ tenantId, actor: "api-gateway", action: "apikey.revoke", target: row.prefix, severity: "warn" });
       return NextResponse.json(row);
     }
     case "flag": {
@@ -124,6 +137,7 @@ export async function PATCH(req: Request) {
         .where(eq(featureFlags.id, Number(body.id)))
         .returning();
       await db.insert(auditLogs).values({
+        tenantId,
         actor: "flag-service",
         action: `flag.${typeof body.enabled === "boolean" ? (body.enabled ? "enable" : "disable") : "update"}`,
         target: row.key,
@@ -141,7 +155,7 @@ export async function PATCH(req: Request) {
         })
         .where(eq(vaultSecrets.id, Number(body.id)))
         .returning();
-      await db.insert(auditLogs).values({ actor: "vault", action: `secret.rotate:v${row.version}`, target: row.name, severity: "warn" });
+      await db.insert(auditLogs).values({ tenantId, actor: "vault", action: `secret.rotate:v${row.version}`, target: row.name, severity: "warn" });
       return NextResponse.json(row);
     }
     case "hook": {

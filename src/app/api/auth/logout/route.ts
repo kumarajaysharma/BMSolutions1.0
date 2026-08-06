@@ -9,8 +9,8 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Read the JWT cookie securely
-    const cookieStore = cookies();
+    // 1. Read the JWT cookie securely (Awaiting cookies() for Next.js 15/16 compliance)
+    const cookieStore = await cookies();
     const token = cookieStore.get("bms_session")?.value;
 
     if (token) {

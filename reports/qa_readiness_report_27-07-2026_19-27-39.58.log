@@ -1,0 +1,49 @@
+[INFO] Logging output to: reports\qa_readiness_report_27-07-2026_19-27-39.58.log 
+[PHASE 2/6] Executing Static Code Analysis and Linting... 
+
+> lint
+> eslint .
+
+
+D:\BMS-Final\saas-studio\src\app\studio\limsy\page.tsx
+  173:3  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/set-state-in-effect')
+  175:5  error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\BMS-Final\saas-studio\src\app\studio\limsy\page.tsx:175:5
+  173 |   // eslint-disable-next-line react-hooks/set-state-in-effect
+  174 |   useEffect(() => {
+> 175 |     loadData();
+      |     ^^^^^^^^ Avoid calling setState() directly within an effect
+  176 |   }, [loadData]);
+  177 |
+  178 |   // ── Case Filing ───────────────────────────────────────────────────────────────  react-hooks/set-state-in-effect
+
+D:\BMS-Final\saas-studio\src\components\workspace\BoqDataGrid.tsx
+  77:3  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/set-state-in-effect')
+  79:5  error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\BMS-Final\saas-studio\src\components\workspace\BoqDataGrid.tsx:79:5
+  77 |   // eslint-disable-next-line react-hooks/set-state-in-effect
+  78 |   useEffect(() => {
+> 79 |     fetchBoqData();
+     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  80 |   }, [fetchBoqData]);
+  81 |
+  82 |   if (isLoading) {  react-hooks/set-state-in-effect
+
+✖ 4 problems (2 errors, 2 warnings)
+  0 errors and 2 warnings potentially fixable with the `--fix` option.
+
+[FAILURE] Linting checks failed. Code quality threshold not met. 

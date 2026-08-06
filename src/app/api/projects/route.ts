@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 
 export async function GET(request: Request) {
   // 1. Extract secure context provided by Middleware
-  const headersList = headers();
+  const headersList = await headers();
   const tenantId = headersList.get("x-tenant-id");
 
   if (!tenantId) {
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   
   // For Module 2, we enforce isolation in the query clause
   const tenantProjects = await db.query.projects.findMany({
-    where: (projects, { eq }) => eq(projects.tenantId, tenantId),
+    where: (projects, { eq }) => eq(projects.tenantId, tenantId as any),
   });
 
   return NextResponse.json(tenantProjects);

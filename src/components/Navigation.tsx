@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Menu, X } from 'lucide-react';
 
 export default function Navigation() {
@@ -13,10 +14,12 @@ export default function Navigation() {
         <div className="flex justify-between items-center h-20">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3 group">
-            <img 
+            <Image 
               src="/images/bnlv-holographic-logo.png" 
               alt="BNLV Group" 
-              className="w-12 h-12 rounded-lg shadow-lg group-hover:shadow-xl transition-shadow"
+              width={48}
+              height={48}
+              className="w-12 h-12 rounded-lg shadow-lg group-hover:shadow-xl transition-shadow object-contain"
             />
             <div className="flex flex-col">
               <span className="text-xl font-bold bg-gradient-to-r from-blue-600 via-emerald-600 to-amber-600 bg-clip-text text-transparent">BNLV</span>

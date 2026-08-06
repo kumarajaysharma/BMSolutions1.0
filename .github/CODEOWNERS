@@ -1,0 +1,36 @@
+# BNLV Group Enterprise Platform — CODEOWNERS
+# Enforces mandatory review by designated owners for sensitive paths.
+# Documentation: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# ─── Authentication & Session Management ────────────────────────────────────
+# Changes here affect JWT signing, session cookie configuration, and
+# the middleware Zero-Trust gate. Principal Architect review is mandatory.
+/src/lib/auth.ts                    @kumarajaysharma
+/src/lib/roles.ts                   @kumarajaysharma
+/src/lib/request-context.ts         @kumarajaysharma
+/src/middleware.ts                  @kumarajaysharma
+
+# ─── Database Schema & Migrations ───────────────────────────────────────────
+# Schema changes and migration files require dual sign-off.
+# Any PR touching these paths must include a db-side verification artifact.
+/src/db/schema.ts                   @kumarajaysharma
+/drizzle/                           @kumarajaysharma
+
+# ─── LIMSY Legal Workflow API ────────────────────────────────────────────────
+# Legal records are cryptographically signed and immutable by regulation.
+# All API route changes in this module require Principal Architect sign-off.
+/src/app/api/limsy/                 @kumarajaysharma
+
+# ─── Admin Control Plane ─────────────────────────────────────────────────────
+# Admin routes operate outside tenant-scoped RLS.
+# Changes require explicit validation of RBAC gate placement.
+/src/app/api/admin/                 @kumarajaysharma
+
+# ─── Provisioning & Migration Scripts ───────────────────────────────────────
+/scripts/provision-tenant.mjs       @kumarajaysharma
+/migrate.mjs                        @kumarajaysharma
+
+# ─── Infrastructure & CI/CD Configuration ───────────────────────────────────
+/.github/                           @kumarajaysharma
+/vercel.json                        @kumarajaysharma
+/.env.production.template           @kumarajaysharma
