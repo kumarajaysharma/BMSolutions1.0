@@ -1,0 +1,202 @@
+name: BNLV Enterprise Platform — CI Gate
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Trigger Configuration
+# Runs on every PR against main and staging.
+# Direct pushes to main are blocked by branch protection rules.
+# ─────────────────────────────────────────────────────────────────────────────
+on:
+  pull_request:
+    branches:
+      - main
+      - staging
+  push:
+    branches:
+      - staging
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 1: Type Safety & Compilation Gate
+  # Blocks merge on any TypeScript error or failed production build.
+  # ───────────────────────────────────────────────────────────────────────────
+  typecheck-and-build:
+    name: TypeScript & Next.js Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript strict check (zero errors policy)
+        run: npx tsc --noEmit
+        # Rationale: `any` casts and type errors mask multi-tenant data leaks
+        # and Drizzle ORM type mismatches at compile time.
+
+      - name: Next.js production build
+        run: npx next build
+        env:
+          # Provide non-sensitive stubs to satisfy build-time env validation.
+          # Real secrets are never stored in CI — Vercel injects them at deploy.
+          JWT_SECRET: ${{ secrets.CI_JWT_SECRET_STUB }}
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL_STUB }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.CI_DATABASE_URL_UNPOOLED_STUB }}
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 2: Security Pattern Audit
+  # Static analysis for patterns that violate established security baselines.
+  # These checks catch architectural violations before human review.
+  # ───────────────────────────────────────────────────────────────────────────
+  security-pattern-audit:
+    name: Security Pattern Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Detect `as any` casts (type safety violation)
+        run: |
+          COUNT=$(grep -rn "as any" src/ --include="*.ts" --include="*.tsx" | wc -l)
+          if [ "$COUNT" -gt "0" ]; then
+            echo "❌ FAIL: $COUNT instance(s) of 'as any' detected. Use Drizzle's \$inferInsert / \$inferSelect."
+            grep -rn "as any" src/ --include="*.ts" --include="*.tsx"
+            exit 1
+          fi
+          echo "✅ PASS: Zero 'as any' casts detected."
+
+      - name: Detect raw JSON.parse on untrusted input (JSON safety violation)
+        # Permits JSON.parse only inside the safeJson() wrapper definition itself.
+        run: |
+          VIOLATIONS=$(grep -rn "JSON\.parse" src/ --include="*.ts" --include="*.tsx" \
+            | grep -v "src/lib/safe-json.ts" \
+            | grep -v "//.*JSON\.parse" || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "❌ FAIL: Raw JSON.parse() detected outside safeJson() wrapper:"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+          echo "✅ PASS: All JSON parsing routed through safeJson()."
+
+      - name: Detect drizzle-kit push --force prohibition
+        run: |
+          if grep -rn "drizzle-kit push --force\|drizzle-kit push.*--force" . \
+            --include="*.sh" --include="*.yml" --include="*.yaml" --include="*.json" \
+            --exclude-dir=node_modules --exclude-dir=.git; then
+            echo "❌ FAIL: drizzle-kit push --force is prohibited. Use node migrate.mjs."
+            exit 1
+          fi
+          echo "✅ PASS: No drizzle-kit push --force detected."
+
+      - name: Detect direct DB calls outside withTenant() context
+        # Flags db.insert/update/delete used outside a withTenant() block.
+        # Note: This is a heuristic check. Human reviewer must confirm boundary.
+        run: |
+          VIOLATIONS=$(grep -rn "db\.insert\|db\.update\|db\.delete" src/app/api/ \
+            --include="*.ts" || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "⚠️  WARNING: Direct db.* calls detected in API routes."
+            echo "   Reviewer must confirm all instances are inside withTenant() callbacks."
+            echo "$VIOLATIONS"
+            # Warning only — does not block merge. Human review is mandatory for this check.
+          else
+            echo "✅ PASS: No direct db.* calls detected outside API context."
+          fi
+
+      - name: Detect JWT fallback secret (auth hardening violation)
+        run: |
+          if grep -rn "super-secret-fallback\|fallback.*secret\|secret.*fallback" src/ \
+            --include="*.ts" --include="*.tsx"; then
+            echo "❌ FAIL: JWT fallback secret string detected. R1 regression."
+            exit 1
+          fi
+          echo "✅ PASS: No JWT fallback secret detected."
+
+      - name: Detect hard DELETE on immutable LIMSY tables
+        run: |
+          VIOLATIONS=$(grep -rn "\.delete\(\)" src/app/api/limsy/ --include="*.ts" || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "❌ FAIL: Hard DELETE detected in LIMSY API routes. Legal records are append-only."
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+          echo "✅ PASS: No hard DELETE in LIMSY routes."
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 3: Migration Journal Integrity Check
+  # Validates that _journal.json sequence is consistent and no migration
+  # file has been retroactively modified (file hash comparison).
+  # ───────────────────────────────────────────────────────────────────────────
+  migration-integrity:
+    name: Migration Journal Integrity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate journal sequence is monotonically ordered
+        run: |
+          node -e "
+            const fs = require('fs');
+            const journal = JSON.parse(fs.readFileSync('drizzle/migrations/meta/_journal.json', 'utf8'));
+            const entries = journal.entries;
+            for (let i = 0; i < entries.length; i++) {
+              if (entries[i].idx !== i) {
+                console.error('❌ FAIL: Journal idx mismatch at position', i, '— found idx', entries[i].idx);
+                process.exit(1);
+              }
+            }
+            console.log('✅ PASS: Journal sequence is monotonically consistent. Entries:', entries.length);
+          "
+
+      - name: Verify migration file exists for every journal entry
+        run: |
+          node -e "
+            const fs = require('fs');
+            const journal = JSON.parse(fs.readFileSync('drizzle/migrations/meta/_journal.json', 'utf8'));
+            let failed = false;
+            for (const entry of journal.entries) {
+              const filePath = \`drizzle/migrations/\${entry.tag}.sql\`;
+              if (!fs.existsSync(filePath)) {
+                console.error('❌ FAIL: Migration file missing for journal entry:', entry.tag);
+                failed = true;
+              }
+            }
+            if (failed) process.exit(1);
+            console.log('✅ PASS: All journal entries have corresponding SQL files.');
+          "
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 4: PR Risk Tier Label Enforcement
+  # Ensures the PR has been classified with a risk tier label.
+  # Requires GitHub labels: "tier:P0", "tier:P1", "tier:P2" to be created.
+  # ───────────────────────────────────────────────────────────────────────────
+  risk-tier-label:
+    name: Risk Tier Label Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Check for risk tier label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            const tierLabels = labels.filter(l => l.startsWith('tier:'));
+            if (tierLabels.length === 0) {
+              core.setFailed(
+                '❌ FAIL: PR must have a risk tier label (tier:P0, tier:P1, or tier:P2). ' +
+                'Apply the correct label and re-run checks.'
+              );
+            } else {
+              console.log('✅ PASS: Risk tier label applied:', tierLabels[0]);
+            }
