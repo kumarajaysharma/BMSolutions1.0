@@ -1,7 +1,12 @@
+/**
+ * src/app/api/nidhivan/projects/route.ts
+ * Nidhivan Workspace Projects API Endpoint
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { nidhivanProjects as projects } from '@/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { withTenant } from '@/lib/auth/tenant';
 
 export async function GET(req: NextRequest) {
@@ -36,14 +41,12 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { projectCode, title, types, estimatedCostPaise } = body;
+    const { projectCode, title, types, estimatedCostPaise, sector, implementingAgency, projectState } = body;
 
     // Strict type and value validation
     if (!projectCode || !title || !types || typeof estimatedCostPaise !== 'number' || estimatedCostPaise < 0) {
       return NextResponse.json({ error: 'Invalid payload structure or negative financial value' }, { status: 400 });
     }
-
-    const ipAddress = req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for') || '127.0.0.1';
 
     const [newProject] = await db
       .insert(projects)
@@ -52,9 +55,11 @@ export async function POST(req: NextRequest) {
         projectCode,
         projectTitle: title,
         projectType: types as any,
+        sector: sector || 'General',
+        implementingAgency: implementingAgency || 'Nidhivan Consulting',
+        projectState: projectState || 'General',
         totalCostPaise: estimatedCostPaise,
         createdBy: Number(body.createdBy || 1),
-        createdByIp: ipAddress,
       })
       .returning();
 
