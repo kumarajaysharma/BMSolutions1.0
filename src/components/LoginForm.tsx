@@ -19,7 +19,18 @@ export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [tenantSlug, setTenantSlug] = useState("");
+  // Lazy initialization prevents cascading renders and satisfies React hooks rules
+  const [tenantSlug, setTenantSlug] = useState(() => {
+    try {
+      if (typeof window !== "undefined") {
+        return localStorage.getItem(TENANT_CACHE_KEY) || "";
+      }
+    } catch {
+      // ignore
+    }
+    return "";
+  });
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -28,17 +39,15 @@ export function LoginForm() {
 
   const emailRef = useRef<HTMLInputElement>(null);
 
-  // Pre-fill workspace from localStorage on mount to improve UX
+  // Focus email on mount if workspace was pre-filled from cache
   useEffect(() => {
     try {
       const savedTenant = localStorage.getItem(TENANT_CACHE_KEY);
-      if (savedTenant) {
-        setTenantSlug(savedTenant);
-        // Move focus to email so the user can tab straight through
-        emailRef.current?.focus();
+      if (savedTenant && emailRef.current) {
+        emailRef.current.focus();
       }
     } catch {
-      // localStorage unavailable (private browsing, etc.) — silent fallback
+      // ignore
     }
   }, []);
 
@@ -75,7 +84,7 @@ export function LoginForm() {
         setError(data.error || "Invalid credentials. Please verify your workspace and password.");
         setIsLoading(false);
       }
-    } catch (err) {
+    } catch {
       setError("A network error occurred. Please check your connection and try again.");
       setIsLoading(false);
     }

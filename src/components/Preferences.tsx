@@ -1,3 +1,8 @@
+/**
+ * src/components/Preferences.tsx
+ * BNLV Studio — Preferences & Localization Provider
+ */
+
 "use client";
 
 import {
@@ -44,27 +49,52 @@ export function usePrefs() {
 }
 
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
-  const [lang, setLangState] = useState<Lang>("en");
-  const [theme, setThemeState] = useState<ThemeId>("serene-sand");
-
-  useEffect(() => {
-    const savedLang = localStorage.getItem("forge-lang") as Lang | null;
-    const savedTheme = localStorage.getItem("forge-theme") as ThemeId | null;
-    if (savedLang && LANGUAGES.some((l) => l.code === savedLang)) setLangState(savedLang);
-    if (savedTheme && THEMES.some((t) => t.id === savedTheme)) {
-      setThemeState(savedTheme);
-      document.documentElement.dataset.theme = savedTheme;
+  // Use lazy initializers wrapped in try/catch to safely handle storage restrictions (e.g., Firefox private mode)
+  const [lang, setLangState] = useState<Lang>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const savedLang = localStorage.getItem("forge-lang") as Lang | null;
+        if (savedLang && LANGUAGES.some((l) => l.code === savedLang)) {
+          return savedLang;
+        }
+      } catch (e) {
+        // Fallback gracefully if localStorage is blocked or restricted
+      }
     }
-  }, []);
+    return "en";
+  });
+
+  const [theme, setThemeState] = useState<ThemeId>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const savedTheme = localStorage.getItem("forge-theme") as ThemeId | null;
+        if (savedTheme && THEMES.some((t) => t.id === savedTheme)) {
+          document.documentElement.dataset.theme = savedTheme;
+          return savedTheme;
+        }
+      } catch (e) {
+        // Fallback gracefully if localStorage is blocked or restricted
+      }
+    }
+    return "serene-sand";
+  });
 
   const setLang = useCallback((l: Lang) => {
     setLangState(l);
-    localStorage.setItem("forge-lang", l);
+    try {
+      localStorage.setItem("forge-lang", l);
+    } catch (e) {
+      // Ignore write errors if storage is disabled
+    }
   }, []);
 
   const setTheme = useCallback((th: ThemeId) => {
     setThemeState(th);
-    localStorage.setItem("forge-theme", th);
+    try {
+      localStorage.setItem("forge-theme", th);
+    } catch (e) {
+      // Ignore write errors if storage is disabled
+    }
     document.documentElement.dataset.theme = th;
   }, []);
 

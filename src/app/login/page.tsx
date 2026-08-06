@@ -14,7 +14,7 @@
 
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { Lock, AlertCircle, Eye, EyeOff, Mail, Building, ArrowRight, ShieldCheck } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 
@@ -24,16 +24,22 @@ function LoginClient() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [tenantSlug, setTenantSlug] = useState("");
+  
+  // Use lazy initializer to read from localStorage with a try/catch guard for strict privacy/private browsing modes
+  const [tenantSlug, setTenantSlug] = useState(() => {
+    if (typeof window !== "undefined") {
+      try {
+        return localStorage.getItem("bnlv_tenant_slug") || "";
+      } catch (e) {
+        // Fallback gracefully if localStorage is blocked or restricted (e.g., Firefox private mode)
+      }
+    }
+    return "";
+  });
+
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-
-  // Load previously used tenant slug to improve UX
-  useEffect(() => {
-    const savedTenant = localStorage.getItem("bnlv_tenant_slug");
-    if (savedTenant) setTenantSlug(savedTenant);
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -48,16 +54,21 @@ function LoginClient() {
       });
 
       if (res.ok) {
-        localStorage.setItem("bnlv_tenant_slug", tenantSlug);
+        try {
+          localStorage.setItem("bnlv_tenant_slug", tenantSlug);
+        } catch (e) {
+          // Ignore write errors if storage is disabled
+        }
         
         // Extract 'next' parameter from URL if it exists, otherwise default to admin
         const nextUrl = searchParams.get("next") || "/admin";
         window.location.href = nextUrl;
       } else {
-        const data = await res.json();
+        const text = await res.text();
+        const data = text ? JSON.parse(text) : {};
         setError(data.error || "Invalid credentials. Please verify your workspace and password.");
       }
-    } catch (err) {
+    } catch {
       setError("A network error occurred. Please check your connection and try again.");
     } finally {
       setIsLoading(false);

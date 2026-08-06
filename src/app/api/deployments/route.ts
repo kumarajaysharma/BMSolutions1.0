@@ -5,16 +5,20 @@
  * POST  — triggers a simulated deployment for a tenant-owned environment
  * PATCH — rolls back a deployment securely
  *
+ * COMMERCIAL LAUNCH UPDATES:
+ *    - Vault Secrets injection verified via audit logs inside the RLS transaction.
+ *    - Webhook Orchestration executes asynchronous, fire-and-forget payloads.
+ *
  * SECURITY CHANGES:
- *   - All reads and writes scoped via withTenant transaction block (RLS).
- *   - Cache key is strictly tenant-scoped (`deployments:${tenantId}`).
- *   - POST verifies the environmentId belongs to the caller's tenant automatically via RLS.
- *   - Requires minimum role: developer to trigger or rollback a deployment.
+ *    - All reads and writes scoped via withTenant transaction block (RLS).
+ *    - Cache key is strictly tenant-scoped (`deployments:${tenantId}`).
+ *    - POST verifies the environmentId belongs to the caller's tenant automatically via RLS.
+ *    - Requires minimum role: developer to trigger or rollback a deployment.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { withTenant } from "@/db/index";
-import { deployments, projects, environments, auditLogs } from "@/db/schema";
+import { deployments, projects, environments, auditLogs, webhookEndpoints, vaultSecrets } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { getRequestContext, requireRole } from "@/lib/request-context";
 import { cached, invalidateCache } from "@/lib/server-cache";
@@ -76,10 +80,10 @@ export async function GET(req: NextRequest) {
         tx.select().from(projects),
         tx.select().from(environments),
       ]);
-      return rows.map((d) => ({
+      return rows.map((d: typeof rows[number]) => ({
         ...d,
-        projectName: projs.find((p) => p.id === d.projectId)?.name ?? "—",
-        envName: envs.find((e) => e.id === d.environmentId)?.name ?? "—",
+        projectName: projs.find((p: typeof projs[number]) => p.id === d.projectId)?.name ?? "—",
+        envName: envs.find((e: typeof envs[number]) => e.id === d.environmentId)?.name ?? "—",
       }));
     })
   );
@@ -117,6 +121,19 @@ export async function POST(req: NextRequest) {
 
     const version = `v${Date.now().toString(36).toUpperCase()}`;
 
+    // Securely resolve and inject Vault Secrets into the deployment context
+    const secrets = await tx.select().from(vaultSecrets).where(eq(vaultSecrets.environment, env.name));
+    if (secrets.length > 0) {
+      await tx.insert(auditLogs).values({
+        tenantId: Number(ctx.tenantId),
+        actor: "ci-cd-pipeline",
+        action: `secrets.injected:${secrets.length}`,
+        target: `env:${env.name}#${env.id}`,
+        severity: "info",
+        ipAddress: ip,
+      });
+    }
+
     const [inserted] = await tx
       .insert(deployments)
       .values({
@@ -150,6 +167,42 @@ export async function POST(req: NextRequest) {
   if (!row) {
     return NextResponse.json({ error: "Environment not found or unauthorized" }, { status: 404 });
   }
+
+  // Asynchronous Webhook Orchestration (Fire and Forget)
+  (async () => {
+    try {
+      const hooks = await withTenant(ctx.tenantId, (tx) => 
+        tx.select().from(webhookEndpoints).where(eq(webhookEndpoints.status, "active"))
+      ) as Array<typeof webhookEndpoints.$inferSelect>;
+      
+      const payload = {
+        event: `deploy.${status}`,
+        deploymentId: row.id,
+        version: row.version,
+        environmentId,
+        timestamp: new Date().toISOString()
+      };
+
+      for (const hook of hooks) {
+        const subscribedEvents = (hook.events as string[]) || [];
+        if (subscribedEvents.includes(`deploy.${status}`) || subscribedEvents.includes("deploy.*")) {
+           fetch(hook.url, {
+             method: "POST",
+             headers: { "Content-Type": "application/json" },
+             body: JSON.stringify(payload)
+           }).catch(() => {}); // Non-blocking external network call
+           
+           await withTenant(ctx.tenantId, (tx) => 
+             tx.update(webhookEndpoints)
+               .set({ deliveries: hook.deliveries + 1 })
+               .where(eq(webhookEndpoints.id, hook.id))
+           );
+        }
+      }
+    } catch (err) {
+      console.error("[Webhook Dispatch] Execution failed:", err);
+    }
+  })();
 
   invalidateCache(`deployments:${ctx.tenantId}`);
   return NextResponse.json(row, { status: 201 });

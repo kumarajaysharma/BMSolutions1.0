@@ -1,0 +1,35 @@
+{
+  "output": {
+    "filePath": "bnlv-enterprise-context.md",
+    "style": "markdown",
+    "fileSummary": true,
+    "directoryStructure": true,
+    "compress": false,
+    "headerText": "BNLV Group Enterprise Platform — Targeted Core LLM Context Bundle"
+  },
+  "include": [
+    "src/app/api/limsy/**/*",
+    "src/app/studio/limsy/**/*",
+    "src/db/**/*",
+    "src/lib/request-context.ts",
+    "src/lib/auth.ts",
+    "src/middleware.ts",
+    "drizzle/migrations/**/*",
+    "complete project progress .md",
+    "System State.json"
+  ],
+  "ignore": {
+    "customPatterns": [
+      "node_modules",
+      ".next",
+      ".git",
+      "dist",
+      "out",
+      "*.lock",
+      "cookies.txt"
+    ]
+  },
+  "security": {
+    "checkSensitiveFiles": true
+  }
+}

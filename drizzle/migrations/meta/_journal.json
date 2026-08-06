@@ -8,6 +8,48 @@
       "when": 1784470178250,
       "tag": "0000_slippery_james_howlett",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784961405055,
+      "tag": "0001_fix_schema_drift",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784470180000,
+      "tag": "0002_enable_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784470185000,
+      "tag": "0003_limsys_workflow",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784961450000,
+      "tag": "0004_revoke_limsy_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784961480000,
+      "tag": "0005_nidhivan_rls_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784961500000,
+      "tag": "0006_vault_secrets_columns",
+      "breakpoints": true
     }
   ]
 }

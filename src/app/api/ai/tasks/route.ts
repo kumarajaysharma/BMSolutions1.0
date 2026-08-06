@@ -4,6 +4,9 @@
  * GET  — returns AI tasks scoped to the requesting tenant
  * POST — creates a task; mode:"lint" runs the security linter
  *
+ * COMMERCIAL LAUNCH UPDATES:
+ *   - Tasks clearing the zero-trust gate auto-provision into the Visual Builder.
+ *
  * SECURITY CHANGES:
  *   - All DB operations now run inside withTenant(ctx.tenantId, …) which
  *     sets SET LOCAL app.current_tenant_id inside a Postgres transaction.
@@ -16,7 +19,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withTenant } from "@/db/index";
-import { aiTasks, auditLogs } from "@/db/schema";
+import { aiTasks, auditLogs, builderComponents } from "@/db/schema";
 import { desc } from "drizzle-orm";
 import { getRequestContext, requireRole } from "@/lib/request-context";
 import { runPipeline } from "@/lib/ai-router";
@@ -63,7 +66,7 @@ export async function POST(req: NextRequest) {
     await withTenant(ctx.tenantId, (tx) =>
       tx.insert(auditLogs).values({
         tenantId: Number(ctx.tenantId),
-        actor: ctx.userId,
+        actor: String(ctx.userId),
         action: `snippet.lint:${result.status}`,
         target: "manual-audit",
         severity:
@@ -102,9 +105,32 @@ export async function POST(req: NextRequest) {
       })
       .returning();
 
+    // ── Autonomous R&D Visual Builder Provisioning ─────────────────────────
+    if (result.status === "committed" && body.projectId && ["frontend", "styling"].includes(result.taskClass)) {
+      const inferredType = result.output.toLowerCase().includes("nav") ? "navbar" : "hero"; 
+      
+      await tx.insert(builderComponents).values({
+        tenantId: Number(ctx.tenantId),
+        projectId: Number(body.projectId),
+        name: `AI Gen: ${inferredType} (${result.routedModel})`,
+        type: inferredType,
+        props: { title: "AI Generated Artifact", content: "Autonomously provisioned by AI Engine." },
+        sortOrder: 99
+      });
+      
+      await tx.insert(auditLogs).values({
+        tenantId: Number(ctx.tenantId),
+        actor: "ai-engine",
+        action: `builder.auto_provision`,
+        target: `project:${body.projectId}`,
+        severity: "info",
+        ipAddress: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "",
+      });
+    }
+
     await tx.insert(auditLogs).values({
       tenantId: Number(ctx.tenantId),
-      actor: ctx.userId,
+      actor: String(ctx.userId),
       action: `ai.task.${result.status}`,
       target: `task:${inserted.id}`,
       severity: result.securityStatus === "fail" ? "critical" : "info",

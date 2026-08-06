@@ -1,9 +1,20 @@
+/**
+ * src/db/seed.ts
+ * BNLV Group Enterprise Database Seeder
+ */
+
 import { getDb } from "./index";
 import { users, tenants } from "./schema";
 import crypto from "crypto";
 import { promisify } from "util";
 
-const scryptAsync = promisify(crypto.scrypt);
+// Explicitly type the promisified function to accept options parameter
+const scryptAsync = promisify(crypto.scrypt) as (
+  password: string | Buffer,
+  salt: string | Buffer,
+  keylen: number,
+  options?: crypto.ScryptOptions
+) => Promise<Buffer>;
 
 async function generateScryptHash(password: string): Promise<string> {
   const salt = crypto.randomBytes(16);

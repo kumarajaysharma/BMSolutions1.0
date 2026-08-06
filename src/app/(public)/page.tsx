@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { ArrowRight, Briefcase, Target, Zap, Users, TrendingUp, Shield } from 'lucide-react';
 
 export default function Home() {
@@ -53,10 +54,12 @@ export default function Home() {
             {/* Hero Image - Holographic Logo */}
             <div className="relative">
               <div className="absolute inset-0 bg-gradient-to-br from-blue-200 via-emerald-100 to-amber-100 rounded-2xl opacity-30 animate-pulse"></div>
-              <div className="relative bg-white rounded-2xl p-8 border-2 border-slate-200 shadow-xl">
-                <img 
+              <div className="relative bg-white rounded-2xl p-8 border-2 border-slate-200 shadow-xl flex items-center justify-center">
+                <Image 
                   src="/images/bnlv-holographic-logo.png" 
                   alt="BNLV Group Holographic Logo"
+                  width={400}
+                  height={400}
                   className="w-full aspect-square object-contain"
                 />
               </div>
@@ -165,7 +168,7 @@ export default function Home() {
               </div>
               <h3 className="text-xl font-bold text-slate-900 mb-3">Strategic Planning</h3>
               <p className="text-slate-600">
-                Comprehensive business strategies tailored to your organization's unique needs and goals.
+                Comprehensive business strategies tailored to your organization&apos;s unique needs and goals.
               </p>
             </div>
 

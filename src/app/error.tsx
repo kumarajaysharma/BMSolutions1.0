@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 export default function ErrorBoundary({
   error,
   reset,
@@ -30,12 +32,12 @@ export default function ErrorBoundary({
           >
             Try again
           </button>
-          <a
+          <Link
             href="/"
             className="rounded-xl border border-sand-300 bg-sand-50 px-5 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-sand-100"
           >
             Go home
-          </a>
+          </Link>
         </div>
       </div>
     </div>

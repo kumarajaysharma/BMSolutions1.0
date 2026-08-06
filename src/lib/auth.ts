@@ -1,10 +1,25 @@
+/**
+ * src/lib/auth.ts
+ *
+ * BNLV Studio — Zero-Trust Authentication & Session Management
+ * REMEDIATION (2026-07-27):
+ *   - Removed silent fallback key to prevent silent insecure deployments.
+ *   - Enforced strict minimum length check (>= 32 characters) for JWT_SECRET.
+ *   - Hardened session cookies with secure: true and sameSite: "strict".
+ */
+
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
-// In production, this MUST be a 32-character random string stored in .env
-const SECRET_KEY = new TextEncoder().encode(
-  process.env.JWT_SECRET || "super-secret-fallback-key-do-not-use-in-prod"
-);
+const jwtSecret = process.env.JWT_SECRET;
+if (!jwtSecret || jwtSecret.trim().length < 32) {
+  throw new Error(
+    "[auth] CRITICAL: JWT_SECRET is missing or less than 32 characters. " +
+    "Set a cryptographically random 64-byte hex string in your environment."
+  );
+}
+
+const SECRET_KEY = new TextEncoder().encode(jwtSecret);
 
 export type SessionPayload = {
   userId: string;
@@ -36,19 +51,17 @@ export async function createSessionCookie(payload: SessionPayload) {
   const expires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
   const sessionToken = await encrypt(payload);
 
-  // Added 'await' here for Next.js 16+ compatibility
   const cookieStore = await cookies();
   cookieStore.set("bms_session", sessionToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: true,
+    sameSite: "strict",
     path: "/",
     expires,
   });
 }
 
 export async function deleteSessionCookie() {
-  // Added 'await' here for Next.js 16+ compatibility
   const cookieStore = await cookies();
   cookieStore.delete("bms_session");
 }

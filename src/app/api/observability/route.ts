@@ -6,11 +6,11 @@
  * PATCH  — updates/resolves incidents securely
  *
  * SECURITY CHANGES:
- *   - Environment and incident reads are scoped via withTenant transaction block (RLS).
- *   - Computed/synthetic metric series (p50, p95, errRate) are derived from
- *     tenant-owned environment rows only — no cross-tenant data leakage.
- *   - Cache key is strictly tenant-scoped (`observability:${tenantId}`).
- *   - Incident mutations (POST/PATCH) verify roles and attribute audit logs to ctx.userId.
+ *    - Environment and incident reads are scoped via withTenant transaction block (RLS).
+ *    - Computed/synthetic metric series (p50, p95, errRate) are derived from
+ *      tenant-owned environment rows only — no cross-tenant data leakage.
+ *    - Cache key is strictly tenant-scoped (`observability:${tenantId}`).
+ *    - Incident mutations (POST/PATCH) verify roles and attribute audit logs to ctx.userId.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -61,10 +61,10 @@ export async function GET(req: NextRequest) {
           .limit(30),
       ]);
 
-      const live = envs.filter((e) => e.status === "running");
+      const live = envs.filter((e: typeof envs[number]) => e.status === "running");
       const hourSeed = Math.floor(Date.now() / 3_600_000);
 
-      const services = live.map((e) => {
+      const services = live.map((e: typeof envs[number]) => {
         const seed = e.id * 7919 + hourSeed;
         const p50 = series(seed, 42, 14);
         const p95 = p50.map(
@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
         };
       });
 
-      const open = incidentRows.filter((i) => i.status !== "resolved");
+      const open = incidentRows.filter((i: typeof incidentRows[number]) => i.status !== "resolved");
 
       return {
         services,
@@ -106,7 +106,7 @@ export async function GET(req: NextRequest) {
           target: 99.9,
           current:
             services.length > 0
-              ? Math.round((services.reduce((a, s) => a + s.availability, 0) / services.length) * 1000) / 1000
+              ? Math.round((services.reduce((a: number, s: typeof services[number]) => a + s.availability, 0) / services.length) * 1000) / 1000
               : 100,
           errorBudgetUsed: Math.min(100, open.length * 12 + (services[0]?.errRate.at(-1) ?? 0) * 9),
           openIncidents: open.length,

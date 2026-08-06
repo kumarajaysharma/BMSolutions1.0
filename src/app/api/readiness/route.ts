@@ -67,6 +67,8 @@ export async function GET() {
           "PWA manifest and service worker present.",
           "Website/app configuration contract is live.",
           "Read-path APIs served via aggregate counts + micro-cache.",
+          "Audit Log Immutability: Enforced via PostgreSQL DB-level privilege revocation (REVOKE UPDATE/DELETE on audit_logs). Cryptographic hash-chaining (previous_hash) formally deferred to Phase 2 (Q4 2026).",
+          "DPDP Act Compliance: Public PII intake tables (job_applications, client_requests) operate without RLS by design as global landing-page forms, secured via server-side input sanitization, audit logging, and restricted admin review endpoints.",
         ],
       },
     };

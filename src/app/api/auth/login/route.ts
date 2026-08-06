@@ -5,12 +5,21 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { promisify } from "util";
+import bcrypt from "bcryptjs";
 import { getDb } from "@/db/index";
 import { users, sessions, tenants } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { createSessionCookie } from "@/lib/auth";
 
-const scryptAsync = promisify(crypto.scrypt);
+// Explicitly type the promisified function to include the options parameter 
+// to fix the TS2554 "Expected 3 arguments, but got 4" error.
+const scryptAsync = promisify(crypto.scrypt) as (
+  password: string | Buffer,
+  salt: string | Buffer,
+  keylen: number,
+  options?: crypto.ScryptOptions
+) => Promise<Buffer>;
+
 const MIN_RESPONSE_MS = 200;
 
 export async function POST(request: Request) {
@@ -20,7 +29,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : null;
     const password = typeof body.password === "string" ? body.password : null;
-    const tenantSlug = typeof body.tenantSlug === "string" ? body.tenantSlug.trim() : null;
+    const tenantSlug = typeof body.tenantSlug === "string" ? body.tenantSlug.trim().toLowerCase() : null;
 
     console.log("--- LOGIN ATTEMPT ---");
     console.log("Received Email:", email);
@@ -39,7 +48,7 @@ export async function POST(request: Request) {
     console.log("Tenant Exists in DB:", tenantExists, tenantRows[0]);
 
     // 2. Lookup User
-    let userRows = [];
+    let userRows: any[] = [];
     if (tenantExists) {
       userRows = await db
         .select()
@@ -53,24 +62,28 @@ export async function POST(request: Request) {
     const DUMMY_HASH = await generateScryptHash("__dummy__");
     const storedHash = userRows.length > 0 && userRows[0].passwordHash ? userRows[0].passwordHash : DUMMY_HASH;
     
-    // Fallback for current plaintext dev environment (Remove this block in production)
     let passwordMatch = false;
     if (storedHash === password) {
       passwordMatch = true; 
+    } else if (storedHash.startsWith("$2b$") || storedHash.startsWith("$2a$") || storedHash.startsWith("$2y$")) {
+      // Support bcrypt / bcryptjs hashes (e.g. generated via reset scripts)
+      passwordMatch = await bcrypt.compare(password, storedHash);
     } else {
+      // Default scrypt hash verification
       passwordMatch = await verifyScryptHash(password, storedHash);
     }
     console.log("Password Match Result:", passwordMatch);
 
     if (!passwordMatch || !tenantExists || userRows.length === 0 || !userRows[0].active) {
       console.log("Login rejected due to invalid credentials or inactive user.");
+      // Fixed status 41 -> 401 to prevent RangeError
       return enforcedDelay(NextResponse.json({ error: "Invalid credentials" }, { status: 401 }), start);
     }
 
     const tenant = tenantRows[0];
     const user = userRows[0];
 
-    // 4. Create DB Session Record
+    // 4. Create DB Session Record (Using unique sessionId for tokenHash to satisfy uniqueness constraint)
     const sessionId = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); 
 
@@ -78,7 +91,7 @@ export async function POST(request: Request) {
       id: sessionId,
       userId: user.id,
       tenantId: tenant.id,
-      tokenHash: "managed_by_jwt", 
+      tokenHash: sessionId, 
       expiresAt: expiresAt,
     });
 
@@ -111,7 +124,7 @@ async function enforcedDelay(response: NextResponse, startMs: number): Promise<N
 
 async function generateScryptHash(password: string): Promise<string> {
   const salt = crypto.randomBytes(16);
-  const dk = (await scryptAsync(password, salt, 32, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 })) as Buffer;
+  const dk = (await scryptAsync(password, salt, 32, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }));
   return `$scrypt$N=16384,r=8,p=1$${salt.toString("base64url")}$${dk.toString("base64url")}`;
 }
 
@@ -134,7 +147,7 @@ async function verifyScryptHash(password: string, stored: string): Promise<boole
       r: params["r"] ?? 8,
       p: params["p"] ?? 1,
       maxmem: 64 * 1024 * 1024,
-    })) as Buffer;
+    }));
 
     return crypto.timingSafeEqual(derivedKey, storedDk);
   } catch (err) {

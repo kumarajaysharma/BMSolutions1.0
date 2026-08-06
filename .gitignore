@@ -10,9 +10,10 @@
 # Production build
 /build
 
-# Local environment files (crucial to protect secrets)
+# Local & Production environment files (crucial to protect secrets)
 .env*.local
 .env
+.env.production
 
 # Vercel deployment folder
 .vercel
@@ -25,3 +26,5 @@ Thumbs.db
 
 # TypeScript cache
 *.tsbuildinfo
+.vercel
+.env*

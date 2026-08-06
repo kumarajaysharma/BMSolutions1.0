@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 import StudioShell from "@/components/StudioShell"; // Import remains same
 import SessionHeader from "@/components/SessionHeaderC"; // Updated to match your file name
@@ -24,7 +25,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInit }} />
+        <Script id="theme-init" strategy="beforeInteractive">
+          {themeInit}
+        </Script>
       </head>
       <body className="min-h-screen bg-sand-50 text-slate-700 antialiased">
         <PreferencesProvider>

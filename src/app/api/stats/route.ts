@@ -34,23 +34,23 @@ export async function GET(req: NextRequest) {
       const [countsRes, recentTasks] = await Promise.all([
         db.execute(sql`
           SELECT
-            (SELECT count(*) FROM tenants)::int                                          AS tenants,
-            (SELECT count(*) FROM users)::int                                            AS users,
-            (SELECT count(*) FROM projects)::int                                         AS projects,
-            (SELECT count(*) FROM builder_components)::int                               AS components,
-            (SELECT count(*) FROM ai_tasks)::int                                         AS tasks,
+            (SELECT count(*) FROM tenants)::int                                                    AS tenants,
+            (SELECT count(*) FROM users)::int                                                       AS users,
+            (SELECT count(*) FROM projects)::int                                                    AS projects,
+            (SELECT count(*) FROM builder_components)::int                                          AS components,
+            (SELECT count(*) FROM ai_tasks)::int                                                    AS tasks,
             (SELECT count(*) FROM ai_tasks WHERE routed_model IN ('claude-fable-5','claude-opus-4.8'))::int AS opus_tasks,
             (SELECT count(*) FROM ai_tasks WHERE routed_model = 'gemini-3.5-flash')::int AS gemini_tasks,
-            (SELECT count(*) FROM ai_tasks WHERE status = 'blocked')::int                AS blocked_tasks,
-            (SELECT count(*) FROM ai_tasks WHERE status = 'committed')::int              AS committed_tasks,
-            (SELECT count(*) FROM environments WHERE status <> 'destroyed')::int         AS environments,
-            (SELECT count(*) FROM environments WHERE status = 'running')::int            AS running_envs,
-            (SELECT count(*) FROM deployments)::int                                      AS deployments,
-            (SELECT count(*) FROM deployments WHERE status = 'success')::int             AS deploys_ok,
-            (SELECT count(*) FROM incidents WHERE status <> 'resolved')::int             AS open_incidents,
-            (SELECT count(*) FROM api_keys WHERE status = 'active')::int                 AS active_keys,
-            (SELECT count(*) FROM feature_flags WHERE enabled = true)::int               AS live_flags,
-            (SELECT count(*) FROM client_requests WHERE status = 'pending')::int         AS pending_requests
+            (SELECT count(*) FROM ai_tasks WHERE status = 'blocked')::int                           AS blocked_tasks,
+            (SELECT count(*) FROM ai_tasks WHERE status = 'committed')::int                       AS committed_tasks,
+            (SELECT count(*) FROM environments WHERE status <> 'destroyed')::int                    AS environments,
+            (SELECT count(*) FROM environments WHERE status = 'running')::int                       AS running_envs,
+            (SELECT count(*) FROM deployments)::int                                                 AS deployments,
+            (SELECT count(*) FROM deployments WHERE status = 'success')::int                        AS deploys_ok,
+            (SELECT count(*) FROM incidents WHERE status <> 'resolved')::int                        AS open_incidents,
+            (SELECT count(*) FROM api_keys WHERE status = 'active')::int                            AS active_keys,
+            (SELECT count(*) FROM feature_flags WHERE enabled = true)::int                          AS live_flags,
+            (SELECT count(*) FROM client_requests WHERE status = 'pending')::int                    AS pending_requests
         `),
         db.select().from(aiTasks).orderBy(desc(aiTasks.id)).limit(5),
       ]);
@@ -105,7 +105,6 @@ export async function GET(req: NextRequest) {
 
 function buildStatsPayload(
   c: Record<string, number>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   recentTasks: any[],
   isGlobal: boolean
 ) {

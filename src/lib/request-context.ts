@@ -21,10 +21,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { hasMinimumRole, type AppRole } from "@/lib/roles";
 
 export interface RequestContext {
-  tenantId: string;
-  userId: string;
+  tenantId: number;
+  userId: number;
   role: AppRole;
-  sessionId: string;
+  sessionId?: string;
+  tenantSlug: string;
 }
 
 /**
@@ -33,12 +34,13 @@ export interface RequestContext {
  * not a user error. Let this propagate as a 500.
  */
 export function getRequestContext(req: NextRequest): RequestContext {
-  const tenantId = req.headers.get("x-tenant-id");
-  const userId = req.headers.get("x-user-id");
+  const tenantIdHeader = req.headers.get("x-tenant-id");
+  const userIdHeader = req.headers.get("x-user-id");
   const role = req.headers.get("x-user-role") as AppRole | null;
-  const sessionId = req.headers.get("x-session-id");
+  const sessionId = req.headers.get("x-session-id") ?? undefined;
+  const tenantSlug = req.headers.get("x-tenant-slug") ?? "bnlv";
 
-  if (!tenantId || !userId || !role || !sessionId) {
+  if (!tenantIdHeader || !userIdHeader || !role) {
     throw new Error(
       "[request-context] Session headers missing. " +
         "Verify that src/middleware.ts is running for this route path."
@@ -46,10 +48,11 @@ export function getRequestContext(req: NextRequest): RequestContext {
   }
 
   return {
-    tenantId,
-    userId,
+    tenantId: Number(tenantIdHeader),
+    userId: Number(userIdHeader),
     role,
     sessionId,
+    tenantSlug,
   };
 }
 
