@@ -15,7 +15,7 @@ import {
   auditLogs 
 } from './schema';
 import { withTenant } from '@/lib/db/with-tenant';
-import { safeJson } from '@/lib/utils';
+import { safeJson } from '@/lib/safe-json';
 import { eq } from 'drizzle-orm';
 
 // Constants locked to Nidhivan Consulting domain
