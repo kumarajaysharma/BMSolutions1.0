@@ -29,7 +29,7 @@ async function seedNidhivan() {
   await db.insert(tenants).values({
     name: 'Nidhivan Consulting',
     slug: 'nidhivan',
-    isActive: true,
+    status: 'active',
   }).onConflictDoNothing();
   
   console.log(`✅ Acquired Tenant Identity: Nidhivan Consulting (ID: ${NIDHIVAN_TENANT_ID})`);
