@@ -178,7 +178,7 @@ async function seedNidhivan() {
       tenantId: NIDHIVAN_TENANT_ID,
       projectId: project.id,
       reportedBy: adminUserId,
-      totalEstimatedCostPaise: 4676075000,
+      plannedExpenditurePaise: 4676075000,
       projectedIrrPercent: "14.50",
       npvPaise: 125000000, // Example NPV baseline
     });
