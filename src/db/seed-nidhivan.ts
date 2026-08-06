@@ -44,7 +44,7 @@ async function seedNidhivan() {
       name: 'Nidhivan System Admin',
       tenantId: NIDHIVAN_TENANT_ID,
       role: 'admin',
-      isActive: true,
+      active: true,
     }).returning({ id: users.id });
     adminUserId = newUser.id;
   } else {
