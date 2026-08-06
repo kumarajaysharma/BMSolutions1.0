@@ -27,10 +27,8 @@ async function seedNidhivan() {
 
   // 1. Tenant Provisioning
   await db.insert(tenants).values({
-    id: NIDHIVAN_TENANT_ID,
     name: 'Nidhivan Consulting',
     slug: 'nidhivan',
-    domain: 'nidhivan.bnlvconsulting.com',
     isActive: true,
   }).onConflictDoNothing();
   
