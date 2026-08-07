@@ -2,6 +2,11 @@
  * src/db/schema.ts
  * BNLV Group Enterprise Schema — Core, Services, LIMSY Supreme Court Module & Nidhivan Track 2
  * Validated for CI/CD Pipeline Integration
+ *
+ * CHANGELOG:
+ *   0007 — Added projectedIrrPercent: numeric(5,2) nullable to nidhivanFinancialMetrics.
+ *          IRR tracked per reporting period to support DPR re-appraisal under shifting
+ *          disbursement conditions. Column is nullable: not mandatory per reporting cycle.
  */
 
 import { 
@@ -559,6 +564,12 @@ export const nidhivanFinancialMetrics = pgTable('nidhivan_financial_metrics', {
   balanceAvailablePaise: bigint('balance_available_paise', { mode: 'number' }).notNull().default(0),
   physicalProgressPct: integer('physical_progress_pct').notNull().default(0),
   financialProgressPct: integer('financial_progress_pct').notNull().default(0),
+  // ── 0007 ADDITION ─────────────────────────────────────────────────────────
+  // Projected IRR at this reporting snapshot. NUMERIC(5,2) for regulatory-grade
+  // decimal precision (supports up to 999.99%). Nullable: IRR re-projection is
+  // not mandatory for every reporting cycle.
+  projectedIrrPercent: numeric('projected_irr_percent', { precision: 5, scale: 2 }),
+  // ──────────────────────────────────────────────────────────────────────────
   remarks: text('remarks'),
   reportedBy: integer('reported_by').notNull().references(() => users.id, { onDelete: 'restrict' }),
   reportedAt: timestamp('reported_at', { withTimezone: true }).notNull(),

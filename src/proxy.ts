@@ -1,7 +1,7 @@
 /**
- * src/middleware.ts
+ * src/proxy.ts
  *
- * BNLV Studio — Zero-Trust Request & Host-Header Tenant Resolution Middleware
+ * BNLV Studio — Zero-Trust Request & Host-Header Tenant Resolution Proxy
  * ===========================================================================
  * Runs on the Next.js Edge Runtime before every matched request.
  *
@@ -23,7 +23,7 @@ import { hasMinimumRole, AppRole } from "@/lib/roles";
 
 const SESSION_COOKIE = "bms_session"; // Matches our login/logout routes
 
-/** Headers injected by middleware — stripped from incoming requests to prevent spoofing */
+/** Headers injected by proxy — stripped from incoming requests to prevent spoofing */
 const MANAGED_HEADERS = [
   "x-tenant-id",
   "x-user-id",
@@ -85,10 +85,10 @@ function forbiddenResponse(isApiRoute: boolean, req: NextRequest): NextResponse 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MIDDLEWARE ENTRY POINT
+// PROXY ENTRY POINT
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function middleware(req: NextRequest): Promise<NextResponse> {
+export async function proxy(req: NextRequest): Promise<NextResponse> {
   const { pathname, searchParams } = req.nextUrl;
   const hostname = req.headers.get("host") || "";
 
