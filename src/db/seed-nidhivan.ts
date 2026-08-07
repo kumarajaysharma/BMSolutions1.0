@@ -172,40 +172,41 @@ async function seedNidhivan() {
       }
     ]);
     console.log(`✅ Seeded CPWD DSR Execution Items`);
+	
+// Insert Financial Metrics
+await tx.insert(nidhivanFinancialMetrics).values({
+  tenantId: NIDHIVAN_TENANT_ID,
+  projectId: project.id,
+  reportedBy: adminUserId,
+  reportingPeriod: "Q1-2026",
+  projectedIrrPercent: "14.50",
+  reportedAt: new Date(),               // ← ADDED: required, .notNull(), no default
+});
+console.log(`✅ Seeded Financial Metrics`);
 
-    // Insert Financial Metrics (Satisfies non-nullable reportedBy FK and required reportingPeriod)
-    await tx.insert(nidhivanFinancialMetrics).values({
-      tenantId: NIDHIVAN_TENANT_ID,
-      projectId: project.id,
-      reportedBy: adminUserId,
-      reportingPeriod: "Q1-2026",
-      projectedIrrPercent: "14.50",
-    });
-    console.log(`✅ Seeded Financial Metrics`);
+// Insert Immutable Audit Log Record
+await tx.insert(auditLogs).values({
+  tenantId: NIDHIVAN_TENANT_ID,
+  actor: "system_seeder",
+  action: "seed_nidhivan_hierarchy",
+  target: "nidhivan_projects",			 // ← REPLACES entity + entityId; maps to .notNull() target
+  severity: "info",
+  // Drop safeJson() and pass the object directly to the jsonb column
+  metadata: { 							 // ← REPLACES details; maps to jsonb metadata column
+    event: "Initial CPWD Schedule of Rates Seed",
+    projectCode: project.projectCode,
+    entityId: project.id.toString(),
+    timestamp: new Date().toISOString(),
+  }
+});
 
-    // Insert Immutable Audit Log Record
-    await tx.insert(auditLogs).values({
-      tenantId: NIDHIVAN_TENANT_ID,
-      action: 'seed_nidhivan_cpwd',
-      entity: 'nidhivan_system',
-      entityId: project.id.toString(),
-      actor: `user:${adminUserId}`,
-      details: safeJson({
-        event: 'Initial CPWD Schedule of Rates Seed',
-        projectCode: project.projectCode,
-        timestamp: new Date().toISOString(),
-      }),
-      createdAt: new Date(),
-    });
-    console.log(`✅ Wrote Immutable Audit Log`);
 
+  console.log(`? Wrote Immutable Audit Log`);
   });
-
-  console.log("🎉 Seed Complete! The Nidhivan BOQ Engine now has live database data.");
+  console.log("?? Seed Complete! The Nidhivan BOQ Engine now has live database data.");
   process.exit(0);
 }
-
 seedNidhivan().catch((err) => {
-  console.error("❌ Seeding failed:", err);
+  console.error("? Seeding failed:", err);
   process.exit(1);
 });
