@@ -1,21 +1,25 @@
 /**
  * src/db/seed-nidhivan.ts
- * Bootstraps the Nidhivan Consulting Track 2 Workspace with a CPWD Schedule of Rates hierarchy.
+ * Bootstraps the Nidhivan Consulting Track 2 Workspace with a CPWD
+ * Schedule of Rates hierarchy under Tenant 10.
+ *
+ * Execution: npx tsx src/db/seed-nidhivan.ts
+ * Architecture: Native Admin Fallback (owner connection via db instance).
+ * RLS bypass is implicit — no SET ROLE required.
  */
 
 import { db } from './index';
-import { 
-  tenants, 
-  users, 
-  nidhivanProjects, 
-  nidhivanDprs, 
-  nidhivanBoqs, 
-  nidhivanBoqItems, 
-  nidhivanFinancialMetrics, 
-  auditLogs 
+import {
+  tenants,
+  users,
+  nidhivanProjects,
+  nidhivanDprs,
+  nidhivanBoqs,
+  nidhivanBoqItems,
+  nidhivanFinancialMetrics,
+  auditLogs
 } from './schema';
 import { withTenant } from '@/lib/db/with-tenant';
-import { safeJson } from '@/lib/safe-json';
 import { eq } from 'drizzle-orm';
 
 // Constants locked to Nidhivan Consulting domain
@@ -31,11 +35,16 @@ async function seedNidhivan() {
     slug: 'nidhivan',
     status: 'active',
   }).onConflictDoNothing();
-  
+
   console.log(`✅ Acquired Tenant Identity: Nidhivan Consulting (ID: ${NIDHIVAN_TENANT_ID})`);
 
-  // 2. Admin User Provisioning (Prerequisite for reportedBy FK & Audit Logs)
-  let adminUsers = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
+  // 2. Admin User Provisioning (prerequisite for reportedBy FK and audit logs)
+  const adminUsers = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, ADMIN_EMAIL))
+    .limit(1);
+
   let adminUserId: number;
 
   if (adminUsers.length === 0) {
@@ -47,11 +56,13 @@ async function seedNidhivan() {
       active: true,
     }).returning({ id: users.id });
     adminUserId = newUser.id;
+    console.log(`✅ Provisioned Admin User: ${ADMIN_EMAIL} (ID: ${adminUserId})`);
   } else {
     adminUserId = adminUsers[0].id;
+    console.log(`⏭️  Admin user already exists (ID: ${adminUserId}). Skipping.`);
   }
 
-  // 3. Idempotency Gate (Existence Check for Tenant 10)
+  // 3. Idempotency Gate — exit early if Tenant 10 data already present
   const existingProjects = await db
     .select({ id: nidhivanProjects.id })
     .from(nidhivanProjects)
@@ -63,10 +74,10 @@ async function seedNidhivan() {
     process.exit(0);
   }
 
-  // 4. Wrap operations inside the official withTenant RLS transaction wrapper
+  // 4. Seed domain data inside the withTenant RLS transaction wrapper
   await withTenant(NIDHIVAN_TENANT_ID, async (tx) => {
-    
-    // Create Project
+
+    // ── Project ──────────────────────────────────────────────────────────────
     const [project] = await tx.insert(nidhivanProjects).values({
       tenantId: NIDHIVAN_TENANT_ID,
       projectCode: "NH44-PKG1",
@@ -81,7 +92,7 @@ async function seedNidhivan() {
     }).returning();
     console.log(`✅ Created Project: ${project.projectTitle}`);
 
-    // Create Detailed Project Report (DPR)
+    // ── DPR ──────────────────────────────────────────────────────────────────
     const [dpr] = await tx.insert(nidhivanDprs).values({
       tenantId: NIDHIVAN_TENANT_ID,
       projectId: project.id,
@@ -94,7 +105,7 @@ async function seedNidhivan() {
     }).returning();
     console.log(`✅ Created DPR Record: ${dpr.dprNumber}`);
 
-    // Create BOQ Record
+    // ── BOQ ──────────────────────────────────────────────────────────────────
     const [boq] = await tx.insert(nidhivanBoqs).values({
       tenantId: NIDHIVAN_TENANT_ID,
       projectId: project.id,
@@ -107,7 +118,7 @@ async function seedNidhivan() {
     }).returning();
     console.log(`✅ Created BOQ Record: ${boq.title}`);
 
-    // Create Execution Items (Headers and DSR Items)
+    // ── BOQ Items (CPWD DSR 2023 hierarchy) ──────────────────────────────────
     await tx.insert(nidhivanBoqItems).values([
       {
         tenantId: NIDHIVAN_TENANT_ID,
@@ -172,41 +183,41 @@ async function seedNidhivan() {
       }
     ]);
     console.log(`✅ Seeded CPWD DSR Execution Items`);
-	
-// Insert Financial Metrics
-await tx.insert(nidhivanFinancialMetrics).values({
-  tenantId: NIDHIVAN_TENANT_ID,
-  projectId: project.id,
-  reportedBy: adminUserId,
-  reportingPeriod: "Q1-2026",
-  projectedIrrPercent: "14.50",
-  reportedAt: new Date(),               // ← ADDED: required, .notNull(), no default
-});
-console.log(`✅ Seeded Financial Metrics`);
 
-// Insert Immutable Audit Log Record
-await tx.insert(auditLogs).values({
-  tenantId: NIDHIVAN_TENANT_ID,
-  actor: "system_seeder",
-  action: "seed_nidhivan_hierarchy",
-  target: "nidhivan_projects",			 // ← REPLACES entity + entityId; maps to .notNull() target
-  severity: "info",
-  // Drop safeJson() and pass the object directly to the jsonb column
-  metadata: { 							 // ← REPLACES details; maps to jsonb metadata column
-    event: "Initial CPWD Schedule of Rates Seed",
-    projectCode: project.projectCode,
-    entityId: project.id.toString(),
-    timestamp: new Date().toISOString(),
-  }
-});
+    // ── Financial Metrics ─────────────────────────────────────────────────────
+    await tx.insert(nidhivanFinancialMetrics).values({
+      tenantId: NIDHIVAN_TENANT_ID,
+      projectId: project.id,
+      reportedBy: adminUserId,
+      reportingPeriod: "Q1-2026",
+      projectedIrrPercent: "14.50",
+      reportedAt: new Date(),
+    });
+    console.log(`✅ Seeded Financial Metrics`);
 
+    // ── Immutable Audit Log ───────────────────────────────────────────────────
+    await tx.insert(auditLogs).values({
+      tenantId: NIDHIVAN_TENANT_ID,
+      actor: "system_seeder",
+      action: "seed_nidhivan_hierarchy",
+      target: `nidhivan_projects:${project.projectCode}`,
+      severity: "info",
+      metadata: {
+        event: "Initial CPWD Schedule of Rates Seed",
+        projectCode: project.projectCode,
+        entityId: project.id.toString(),
+        timestamp: new Date().toISOString(),
+      }
+    });
+    console.log(`✅ Wrote Immutable Audit Log`);
 
-  console.log(`? Wrote Immutable Audit Log`);
   });
-  console.log("?? Seed Complete! The Nidhivan BOQ Engine now has live database data.");
+
+  console.log("🎉 Seed Complete! The Nidhivan BOQ Engine now has live database data.");
   process.exit(0);
 }
+
 seedNidhivan().catch((err) => {
-  console.error("? Seeding failed:", err);
+  console.error("❌ Seeding failed:", err);
   process.exit(1);
 });
