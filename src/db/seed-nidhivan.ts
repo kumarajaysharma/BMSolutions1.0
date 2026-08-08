@@ -1,11 +1,14 @@
 /**
  * src/db/seed-nidhivan.ts
  * Bootstraps the Nidhivan Consulting Track 2 Workspace with a CPWD
- * Schedule of Rates hierarchy under Tenant 10.
+ * Schedule of Rates hierarchy.
  *
  * Execution: npx tsx src/db/seed-nidhivan.ts
  * Architecture: Native Admin Fallback (owner connection via db instance).
  * RLS bypass is implicit — no SET ROLE required.
+ *
+ * Tenant ID: Resolved dynamically at runtime via slug lookup.
+ * Do not hardcode tenant IDs — serial sequences are environment-dependent.
  */
 
 import { db } from './index';
@@ -22,24 +25,37 @@ import {
 import { withTenant } from '@/lib/db/with-tenant';
 import { eq } from 'drizzle-orm';
 
-// Constants locked to Nidhivan Consulting domain
-const NIDHIVAN_TENANT_ID = 10;
+const NIDHIVAN_SLUG = 'nidhivan';
 const ADMIN_EMAIL = 'admin@nidhivan.bnlvconsulting.com';
 
 async function seedNidhivan() {
   console.log("🌱 Starting Nidhivan CPWD Schedule of Rates Seed...");
 
-  // 1. Tenant Provisioning
+  // ── Step 1: Tenant Provisioning ───────────────────────────────────────────
+  // Insert if absent. onConflictDoNothing() targets the unique slug constraint.
   await db.insert(tenants).values({
     name: 'Nidhivan Consulting',
-    slug: 'nidhivan',
+    slug: NIDHIVAN_SLUG,
     status: 'active',
   }).onConflictDoNothing();
 
-  console.log(`✅ Acquired Tenant Identity: Nidhivan Consulting (ID: ${NIDHIVAN_TENANT_ID})`);
+  // Resolve actual tenant ID at runtime — never assume serial value.
+  const [nidhivanTenant] = await db
+    .select()
+    .from(tenants)
+    .where(eq(tenants.slug, NIDHIVAN_SLUG))
+    .limit(1);
 
-  // 2. Admin User Provisioning (prerequisite for reportedBy FK and audit logs)
-  const adminUsers = await db
+  if (!nidhivanTenant) {
+    throw new Error('[SEED CRITICAL] Failed to provision or locate Nidhivan tenant.');
+  }
+
+  const tenantId = nidhivanTenant.id;
+  console.log(`✅ Acquired Tenant Identity: ${nidhivanTenant.name} (ID: ${tenantId})`);
+
+  // ── Step 2: Admin User Provisioning ──────────────────────────────────────
+  // Required for reportedBy FK and audit log actor references.
+  const [existingAdmin] = await db
     .select()
     .from(users)
     .where(eq(users.email, ADMIN_EMAIL))
@@ -47,39 +63,39 @@ async function seedNidhivan() {
 
   let adminUserId: number;
 
-  if (adminUsers.length === 0) {
+  if (!existingAdmin) {
     const [newUser] = await db.insert(users).values({
       email: ADMIN_EMAIL,
       name: 'Nidhivan System Admin',
-      tenantId: NIDHIVAN_TENANT_ID,
+      tenantId,
       role: 'admin',
       active: true,
     }).returning({ id: users.id });
     adminUserId = newUser.id;
     console.log(`✅ Provisioned Admin User: ${ADMIN_EMAIL} (ID: ${adminUserId})`);
   } else {
-    adminUserId = adminUsers[0].id;
+    adminUserId = existingAdmin.id;
     console.log(`⏭️  Admin user already exists (ID: ${adminUserId}). Skipping.`);
   }
 
-  // 3. Idempotency Gate — exit early if Tenant 10 data already present
-  const existingProjects = await db
+  // ── Step 3: Idempotency Gate ──────────────────────────────────────────────
+  const [existingProject] = await db
     .select({ id: nidhivanProjects.id })
     .from(nidhivanProjects)
-    .where(eq(nidhivanProjects.tenantId, NIDHIVAN_TENANT_ID))
+    .where(eq(nidhivanProjects.tenantId, tenantId))
     .limit(1);
 
-  if (existingProjects.length > 0) {
-    console.log('✅ Idempotency Gate Triggered: Nidhivan Consulting data already seeded. Exiting.');
+  if (existingProject) {
+    console.log('✅ Idempotency Gate Triggered: Nidhivan data already seeded. Exiting.');
     process.exit(0);
   }
 
-  // 4. Seed domain data inside the withTenant RLS transaction wrapper
-  await withTenant(NIDHIVAN_TENANT_ID, async (tx) => {
+  // ── Step 4: Domain Data (inside withTenant RLS wrapper) ──────────────────
+  await withTenant(tenantId, async (tx) => {
 
     // ── Project ──────────────────────────────────────────────────────────────
     const [project] = await tx.insert(nidhivanProjects).values({
-      tenantId: NIDHIVAN_TENANT_ID,
+      tenantId,
       projectCode: "NH44-PKG1",
       projectTitle: "NH-44 Highway Expansion (Package 1)",
       projectType: "infrastructure",
@@ -94,7 +110,7 @@ async function seedNidhivan() {
 
     // ── DPR ──────────────────────────────────────────────────────────────────
     const [dpr] = await tx.insert(nidhivanDprs).values({
-      tenantId: NIDHIVAN_TENANT_ID,
+      tenantId,
       projectId: project.id,
       dprNumber: "DPR-NH44-01",
       title: "Detailed Project Report - NH-44 Widening",
@@ -107,7 +123,7 @@ async function seedNidhivan() {
 
     // ── BOQ ──────────────────────────────────────────────────────────────────
     const [boq] = await tx.insert(nidhivanBoqs).values({
-      tenantId: NIDHIVAN_TENANT_ID,
+      tenantId,
       projectId: project.id,
       dprId: dpr.id,
       boqNumber: "BOQ-NH44-01",
@@ -121,7 +137,7 @@ async function seedNidhivan() {
     // ── BOQ Items (CPWD DSR 2023 hierarchy) ──────────────────────────────────
     await tx.insert(nidhivanBoqItems).values([
       {
-        tenantId: NIDHIVAN_TENANT_ID,
+        tenantId,
         boqId: boq.id,
         itemNumber: 1,
         sectionCode: "SH-01",
@@ -132,7 +148,7 @@ async function seedNidhivan() {
         amountPaise: 0,
       },
       {
-        tenantId: NIDHIVAN_TENANT_ID,
+        tenantId,
         boqId: boq.id,
         itemNumber: 2,
         sectionCode: "SH-01",
@@ -145,7 +161,7 @@ async function seedNidhivan() {
         rateRef: "DSR 2023 Item 2.6.1"
       },
       {
-        tenantId: NIDHIVAN_TENANT_ID,
+        tenantId,
         boqId: boq.id,
         itemNumber: 3,
         sectionCode: "SH-01",
@@ -158,7 +174,7 @@ async function seedNidhivan() {
         rateRef: "DSR 2023 Item 2.25"
       },
       {
-        tenantId: NIDHIVAN_TENANT_ID,
+        tenantId,
         boqId: boq.id,
         itemNumber: 4,
         sectionCode: "SH-02",
@@ -169,7 +185,7 @@ async function seedNidhivan() {
         amountPaise: 0,
       },
       {
-        tenantId: NIDHIVAN_TENANT_ID,
+        tenantId,
         boqId: boq.id,
         itemNumber: 5,
         sectionCode: "SH-02",
@@ -186,7 +202,7 @@ async function seedNidhivan() {
 
     // ── Financial Metrics ─────────────────────────────────────────────────────
     await tx.insert(nidhivanFinancialMetrics).values({
-      tenantId: NIDHIVAN_TENANT_ID,
+      tenantId,
       projectId: project.id,
       reportedBy: adminUserId,
       reportingPeriod: "Q1-2026",
@@ -197,7 +213,7 @@ async function seedNidhivan() {
 
     // ── Immutable Audit Log ───────────────────────────────────────────────────
     await tx.insert(auditLogs).values({
-      tenantId: NIDHIVAN_TENANT_ID,
+      tenantId,
       actor: "system_seeder",
       action: "seed_nidhivan_hierarchy",
       target: `nidhivan_projects:${project.projectCode}`,
