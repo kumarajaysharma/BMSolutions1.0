@@ -1,7 +1,7 @@
 /**
  * src/lib/request-context.ts
  *
- * Helpers for reading the verified session context that middleware injects
+ * Helpers for reading the verified session context that the proxy injects
  * into every authenticated request via headers.
  *
  * USAGE IN AN API ROUTE:
@@ -29,8 +29,8 @@ export interface RequestContext {
 }
 
 /**
- * Extracts the verified session context from middleware-injected headers.
- * Throws an Error if headers are absent — indicates middleware misconfiguration,
+ * Extracts the verified session context from proxy-injected headers.
+ * Throws an Error if headers are absent — indicates proxy misconfiguration,
  * not a user error. Let this propagate as a 500.
  */
 export function getRequestContext(req: NextRequest): RequestContext {
@@ -38,12 +38,12 @@ export function getRequestContext(req: NextRequest): RequestContext {
   const userIdHeader = req.headers.get("x-user-id");
   const role = req.headers.get("x-user-role") as AppRole | null;
   const sessionId = req.headers.get("x-session-id") ?? undefined;
-  const tenantSlug = req.headers.get("x-tenant-slug") ?? "bnlv";
+  const tenantSlug = req.headers.get("x-tenant-slug");
 
-  if (!tenantIdHeader || !userIdHeader || !role) {
+  if (!tenantIdHeader || !userIdHeader || !role || !tenantSlug) {
     throw new Error(
       "[request-context] Session headers missing. " +
-        "Verify that src/middleware.ts is running for this route path."
+        "Verify that src/proxy.ts is running for this route path."
     );
   }
 
