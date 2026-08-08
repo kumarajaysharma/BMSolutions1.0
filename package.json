@@ -13,8 +13,10 @@
     "test:ci": "echo \"No test suite configured yet\" && exit 0",
     "test:load:smoke": "echo \"No load test suite configured yet\" && exit 0",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx src/db/migrate.ts",
-    "db:seed:prod": "tsx src/db/run-seed.ts"
+    "db:migrate": "drizzle-kit migrate",
+    "db:seed": "tsx src/db/run-seed.ts",
+    "db:seed:prod": "tsx src/db/run-seed.ts",
+    "context": "git log -n 1 --oneline > llm-context.txt && git status >> llm-context.txt && npm run typecheck >> llm-context.txt"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

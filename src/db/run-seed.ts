@@ -49,8 +49,9 @@ async function run() {
 
     await db.transaction(async (tx) => {
       
-      // 1. ESCALATION: Switch to the BYPASSRLS role established in 0002_enable_rls.sql
-      await tx.execute(sql.raw(`SET ROLE studio_migrator;`));
+      // 1. ESCALATION DISABLED: Neon serverless environments block SET ROLE for non-superusers.
+      // The script runs natively as the DB owner, which inherently bypasses RLS.
+      // await tx.execute(sql.raw(`SET ROLE studio_migrator;`));
       
       // 2. Pin context for audit logging
       await tx.execute(sql.raw(`SET LOCAL app.current_tenant_id = '${TARGET_TENANT_ID}';`));
