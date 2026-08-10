@@ -1,41 +1,72 @@
-import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
-import { db } from '@/db';
-import { nidhivanDprs as dprs } from '@/db/schema';
-import { eq } from 'drizzle-orm';
-import { withTenant } from '@/lib/auth/tenant';
+import { NextResponse, NextRequest } from "next/server";
+import { db, withTenant } from "@/db";
+import { nidhivanDprs } from "@/db/schema";
+import { eq, desc } from "drizzle-orm";
+import { getRequestContext, requireRole } from "@/lib/request-context";
+import { createHash } from "crypto";
+
+export const dynamic = "force-dynamic";
+
+export async function GET(req: NextRequest) {
+  try {
+    const ctx = getRequestContext(req);
+    const denied = requireRole(ctx, "viewer");
+    if (denied) return denied;
+
+    const tenantId = Number(ctx.tenantId);
+
+    const data = await withTenant(tenantId, async (tx) => {
+      return await tx
+        .select()
+        .from(nidhivanDprs)
+        .where(eq(nidhivanDprs.tenantId, tenantId))
+        .orderBy(desc(nidhivanDprs.createdAt));
+    });
+
+    return NextResponse.json({ success: true, data }, { status: 200 });
+  } catch (error) {
+    console.error("[NIDHIVAN] DPRs Fetch Error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const tenantCtx = await withTenant(req);
-    if (!tenantCtx?.isAuthenticated) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const ctx = getRequestContext(req);
+    const denied = requireRole(ctx, "developer");
+    if (denied) return denied;
 
-    const body = await req.json();
-    const { projectId, reportDetails, physicalProgressPercentage } = body;
+    const tenantId = Number(ctx.tenantId);
+    const body = await req.json().catch(() => ({}));
 
-    if (!projectId || !reportDetails) {
-      return NextResponse.json({ error: 'Missing required DPR attributes' }, { status: 400 });
+    const { projectId, dprNumber, reportDetails } = body;
+    if (!projectId || !dprNumber || !reportDetails) {
+      return NextResponse.json(
+        { error: "projectId, dprNumber, and reportDetails are required." },
+        { status: 400 }
+      );
     }
 
-    // Generate SHA-256 Cryptographic Hash for tamper-proof auditing
-    const rawStringData = `${tenantCtx.tenantId}:${projectId}:${JSON.stringify(reportDetails)}:${Date.now()}`;
-    const cryptographicHash = crypto.createHash('sha256').update(rawStringData).digest('hex');
+    const rawStringData = `${tenantId}:${projectId}:${dprNumber}:${JSON.stringify(reportDetails)}`;
+    const hash = createHash("sha256").update(rawStringData).digest("hex");
 
-    const [newDpr] = await db
-      .insert(dprs)
-      .values({
-        tenantId: Number(tenantCtx.tenantId),
-        projectId: Number(projectId),
-        title: body.title || `DPR - ${new Date().toISOString().split('T')[0]}`,
-        dprNumber: body.dprNumber || `DPR-${Date.now()}`,
-        financialYear: body.financialYear || '2026-2027',
-        status: body.status || 'draft',
-        createdBy: body.createdBy || tenantCtx.role || 'system',
-      })
-      .returning();
+    const newDpr = await withTenant(tenantId, async (tx) => {
+      const [inserted] = await tx
+        .insert(nidhivanDprs)
+        .values({
+          tenantId,
+          projectId: Number(projectId),
+          dprNumber: String(dprNumber).trim(),
+          reportDetails,
+          integrityHash: hash,
+        })
+        .returning();
+      return inserted;
+    });
 
-    return NextResponse.json({ success: true, data: newDpr, hash: cryptographicHash }, { status: 201 });
+    return NextResponse.json({ success: true, data: newDpr }, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ error: 'Internal Server Error', details: String(error) }, { status: 500 });
+    console.error("[NIDHIVAN] DPR Creation Error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
