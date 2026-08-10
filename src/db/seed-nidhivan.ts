@@ -1,16 +1,6 @@
 /**
  * src/db/seed-nidhivan.ts
- * Bootstraps the Nidhivan Consulting Track 2 Workspace with a CPWD
- * Schedule of Rates hierarchy.
- *
- * Execution: npx tsx src/db/seed-nidhivan.ts
- *
- * Architecture (ADR-002 — Native Admin Fallback):
- * Connects via DATABASE_URL_UNPOOLED using node-postgres (not the Neon
- * serverless driver). The owner connection carries implicit superuser
- * privileges on Neon and bypasses RLS natively. withTenant() is an
- * application-layer RLS enforcement wrapper — it must NOT be used in
- * seed scripts, which require bypass, not enforcement.
+ * Bootstraps the Nidhivan Consulting Track 2 Workspace with a CPWD Schedule of Rates hierarchy.
  */
 
 import * as dotenv from 'dotenv';
@@ -19,93 +9,85 @@ dotenv.config({ path: '.env.local' });
 import pkg from 'pg';
 const { Client } = pkg;
 import { drizzle } from 'drizzle-orm/node-postgres';
-import {
-  tenants,
-  users,
-  nidhivanProjects,
-  nidhivanDprs,
-  nidhivanBoqs,
-  nidhivanBoqItems,
-  nidhivanFinancialMetrics,
-  auditLogs
+import { eq, sql } from 'drizzle-orm';
+import { 
+  tenants, 
+  users, 
+  nidhivanProjects, 
+  nidhivanDprs, 
+  nidhivanBoqs, 
+  nidhivanBoqItems, 
+  nidhivanFinancialMetrics, 
+  auditLogs 
 } from './schema.js';
-import { eq } from 'drizzle-orm';
 
-const NIDHIVAN_SLUG = 'nidhivan';
 const ADMIN_EMAIL = 'admin@nidhivan.bnlvconsulting.com';
 
 async function seedNidhivan() {
   console.log("🌱 Starting Nidhivan CPWD Schedule of Rates Seed...");
 
+  // Enforce unpooled direct connection for administrative RLS bypass
   const client = new Client({ connectionString: process.env.DATABASE_URL_UNPOOLED });
   await client.connect();
   const db = drizzle(client);
 
   try {
-    // ── Step 1: Tenant Provisioning ─────────────────────────────────────────
-    // onConflictDoNothing() targets the unique slug constraint.
-    await db.insert(tenants).values({
-      name: 'Nidhivan Consulting',
-      slug: NIDHIVAN_SLUG,
-      status: 'active',
-    }).onConflictDoNothing();
+    // 1. Tenant Provisioning (Public/Unforced Table)
+    let tenantRecords = await db.select().from(tenants).where(eq(tenants.slug, 'nidhivan')).limit(1);
+    let tenantId: number;
 
-    // Resolve actual tenant ID at runtime — never assume serial value.
-    const [nidhivanTenant] = await db
-      .select()
-      .from(tenants)
-      .where(eq(tenants.slug, NIDHIVAN_SLUG))
-      .limit(1);
-
-    if (!nidhivanTenant) {
-      throw new Error('[SEED CRITICAL] Failed to provision or locate Nidhivan tenant.');
+    if (tenantRecords.length === 0) {
+      const [newTenant] = await db.insert(tenants).values({
+        name: 'Nidhivan Consulting',
+        slug: 'nidhivan',
+        status: 'active',
+      }).returning({ id: tenants.id });
+      tenantId = newTenant.id;
+      console.log(`✅ Provisioned Tenant: Nidhivan Consulting (ID: ${tenantId})`);
+    } else {
+      tenantId = tenantRecords[0].id;
+      console.log(`✅ Acquired Tenant Identity: Nidhivan Consulting (ID: ${tenantId})`);
     }
-
-    const tenantId = nidhivanTenant.id;
-    console.log(`✅ Acquired Tenant Identity: ${nidhivanTenant.name} (ID: ${tenantId})`);
-
-    // ── Step 2: Admin User Provisioning ─────────────────────────────────────
-    const [existingAdmin] = await db
-      .select()
-      .from(users)
-      .where(eq(users.email, ADMIN_EMAIL))
-      .limit(1);
-
+    
+    // 2. Admin User Provisioning (Public/Unforced Table)
+    let adminUsers = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
     let adminUserId: number;
 
-    if (!existingAdmin) {
+    if (adminUsers.length === 0) {
       const [newUser] = await db.insert(users).values({
         email: ADMIN_EMAIL,
         name: 'Nidhivan System Admin',
-        tenantId,
+        tenantId: tenantId,
         role: 'admin',
         active: true,
       }).returning({ id: users.id });
       adminUserId = newUser.id;
       console.log(`✅ Provisioned Admin User: ${ADMIN_EMAIL} (ID: ${adminUserId})`);
     } else {
-      adminUserId = existingAdmin.id;
+      adminUserId = adminUsers[0].id;
       console.log(`⏭️  Admin user already exists (ID: ${adminUserId}). Skipping.`);
     }
 
-    // ── Step 3: Idempotency Gate ─────────────────────────────────────────────
-    const [existingProject] = await db
-      .select({ id: nidhivanProjects.id })
-      .from(nidhivanProjects)
-      .where(eq(nidhivanProjects.tenantId, tenantId))
-      .limit(1);
-
-    if (existingProject) {
-      console.log('✅ Idempotency Gate Triggered: Nidhivan data already seeded. Exiting.');
-      process.exit(0);
-    }
-
-    // ── Step 4: Domain Data (owner connection — RLS bypassed natively) ───────
+    // 3. Data Seeding inside strict RLS Transaction
     await db.transaction(async (tx) => {
+      // Explicitly pin the RLS context before ANY queries on RLS-forced tables
+      await tx.execute(sql.raw(`SET LOCAL app.current_tenant_id = '${tenantId}';`));
 
-      // ── Project ────────────────────────────────────────────────────────────
+      // 4. Idempotency Gate (Moved inside transaction after context is set)
+      const existingProjects = await tx
+        .select({ id: nidhivanProjects.id })
+        .from(nidhivanProjects)
+        .where(eq(nidhivanProjects.tenantId, tenantId))
+        .limit(1);
+
+      if (existingProjects.length > 0) {
+        console.log('✅ Idempotency Gate Triggered: Nidhivan Consulting data already seeded. Exiting.');
+        return; // Exit transaction gracefully
+      }
+
+      // Create Project
       const [project] = await tx.insert(nidhivanProjects).values({
-        tenantId,
+        tenantId: tenantId,
         projectCode: "NH44-PKG1",
         projectTitle: "NH-44 Highway Expansion (Package 1)",
         projectType: "infrastructure",
@@ -118,9 +100,9 @@ async function seedNidhivan() {
       }).returning();
       console.log(`✅ Created Project: ${project.projectTitle}`);
 
-      // ── DPR ────────────────────────────────────────────────────────────────
+      // Create Detailed Project Report (DPR)
       const [dpr] = await tx.insert(nidhivanDprs).values({
-        tenantId,
+        tenantId: tenantId,
         projectId: project.id,
         dprNumber: "DPR-NH44-01",
         title: "Detailed Project Report - NH-44 Widening",
@@ -131,9 +113,9 @@ async function seedNidhivan() {
       }).returning();
       console.log(`✅ Created DPR Record: ${dpr.dprNumber}`);
 
-      // ── BOQ ────────────────────────────────────────────────────────────────
+      // Create BOQ Record
       const [boq] = await tx.insert(nidhivanBoqs).values({
-        tenantId,
+        tenantId: tenantId,
         projectId: project.id,
         dprId: dpr.id,
         boqNumber: "BOQ-NH44-01",
@@ -144,10 +126,10 @@ async function seedNidhivan() {
       }).returning();
       console.log(`✅ Created BOQ Record: ${boq.title}`);
 
-      // ── BOQ Items (CPWD DSR 2023 hierarchy) ────────────────────────────────
+      // Create Execution Items
       await tx.insert(nidhivanBoqItems).values([
         {
-          tenantId,
+          tenantId: tenantId,
           boqId: boq.id,
           itemNumber: 1,
           sectionCode: "SH-01",
@@ -158,7 +140,7 @@ async function seedNidhivan() {
           amountPaise: 0,
         },
         {
-          tenantId,
+          tenantId: tenantId,
           boqId: boq.id,
           itemNumber: 2,
           sectionCode: "SH-01",
@@ -171,7 +153,7 @@ async function seedNidhivan() {
           rateRef: "DSR 2023 Item 2.6.1"
         },
         {
-          tenantId,
+          tenantId: tenantId,
           boqId: boq.id,
           itemNumber: 3,
           sectionCode: "SH-01",
@@ -184,7 +166,7 @@ async function seedNidhivan() {
           rateRef: "DSR 2023 Item 2.25"
         },
         {
-          tenantId,
+          tenantId: tenantId,
           boqId: boq.id,
           itemNumber: 4,
           sectionCode: "SH-02",
@@ -195,7 +177,7 @@ async function seedNidhivan() {
           amountPaise: 0,
         },
         {
-          tenantId,
+          tenantId: tenantId,
           boqId: boq.id,
           itemNumber: 5,
           sectionCode: "SH-02",
@@ -209,10 +191,10 @@ async function seedNidhivan() {
         }
       ]);
       console.log(`✅ Seeded CPWD DSR Execution Items`);
-
-      // ── Financial Metrics ───────────────────────────────────────────────────
+      
+      // Insert Financial Metrics
       await tx.insert(nidhivanFinancialMetrics).values({
-        tenantId,
+        tenantId: tenantId,
         projectId: project.id,
         reportedBy: adminUserId,
         reportingPeriod: "Q1-2026",
@@ -221,14 +203,14 @@ async function seedNidhivan() {
       });
       console.log(`✅ Seeded Financial Metrics`);
 
-      // ── Immutable Audit Log ─────────────────────────────────────────────────
+      // Insert Immutable Audit Log
       await tx.insert(auditLogs).values({
-        tenantId,
+        tenantId: tenantId,
         actor: "system_seeder",
         action: "seed_nidhivan_hierarchy",
         target: `nidhivan_projects:${project.projectCode}`,
         severity: "info",
-        metadata: {
+        metadata: { 
           event: "Initial CPWD Schedule of Rates Seed",
           projectCode: project.projectCode,
           entityId: project.id.toString(),
@@ -236,7 +218,6 @@ async function seedNidhivan() {
         }
       });
       console.log(`✅ Wrote Immutable Audit Log`);
-
     });
 
     console.log("🎉 Seed Complete! The Nidhivan BOQ Engine now has live database data.");
