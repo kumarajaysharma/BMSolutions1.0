@@ -9,7 +9,7 @@ dotenv.config({ path: '.env.local' });
 import pkg from 'pg';
 const { Client } = pkg;
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { 
   tenants, 
   users, 
@@ -68,12 +68,15 @@ async function seedNidhivan() {
       console.log(`⏭️  Admin user already exists (ID: ${adminUserId}). Skipping.`);
     }
 
-    // 3. Data Seeding inside strict RLS Transaction
-    await db.transaction(async (tx) => {
-      // Explicitly pin the RLS context before ANY queries on RLS-forced tables
-      await tx.execute(sql.raw(`SET LOCAL app.current_tenant_id = '${tenantId}';`));
+    // 3. SECURE CONNECTION-LEVEL RLS BINDING
+    // Binds the tenant ID to the entire unpooled session. This permanently 
+    // resolves the node-postgres asynchronous tick context-dropping.
+    await client.query(`SET app.current_tenant_id = '${tenantId}'`);
 
-      // 4. Idempotency Gate (Moved inside transaction after context is set)
+    // 4. Data Seeding inside strict Transaction
+    await db.transaction(async (tx) => {
+      
+      // Idempotency Gate
       const existingProjects = await tx
         .select({ id: nidhivanProjects.id })
         .from(nidhivanProjects)
@@ -85,7 +88,6 @@ async function seedNidhivan() {
         return; // Exit transaction gracefully
       }
 
-      // Create Project
       const [project] = await tx.insert(nidhivanProjects).values({
         tenantId: tenantId,
         projectCode: "NH44-PKG1",
@@ -100,7 +102,6 @@ async function seedNidhivan() {
       }).returning();
       console.log(`✅ Created Project: ${project.projectTitle}`);
 
-      // Create Detailed Project Report (DPR)
       const [dpr] = await tx.insert(nidhivanDprs).values({
         tenantId: tenantId,
         projectId: project.id,
@@ -113,7 +114,6 @@ async function seedNidhivan() {
       }).returning();
       console.log(`✅ Created DPR Record: ${dpr.dprNumber}`);
 
-      // Create BOQ Record
       const [boq] = await tx.insert(nidhivanBoqs).values({
         tenantId: tenantId,
         projectId: project.id,
@@ -126,7 +126,6 @@ async function seedNidhivan() {
       }).returning();
       console.log(`✅ Created BOQ Record: ${boq.title}`);
 
-      // Create Execution Items
       await tx.insert(nidhivanBoqItems).values([
         {
           tenantId: tenantId,
@@ -192,7 +191,6 @@ async function seedNidhivan() {
       ]);
       console.log(`✅ Seeded CPWD DSR Execution Items`);
       
-      // Insert Financial Metrics
       await tx.insert(nidhivanFinancialMetrics).values({
         tenantId: tenantId,
         projectId: project.id,
@@ -203,7 +201,6 @@ async function seedNidhivan() {
       });
       console.log(`✅ Seeded Financial Metrics`);
 
-      // Insert Immutable Audit Log
       await tx.insert(auditLogs).values({
         tenantId: tenantId,
         actor: "system_seeder",

@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { db } from '@/db';
+import { db, withTenant } from '@/db';
 import { nidhivanBoqItems } from '@/db/schema';
-import { withTenant } from '@/lib/db/with-tenant';
+import { getRequestContext, requireRole } from '@/lib/request-context';
 
 type RouteContext = {
   params: Promise<{
@@ -11,16 +11,13 @@ type RouteContext = {
 
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
-    const tenantId = request.headers.get('x-tenant-id');
+    const ctx = getRequestContext(request);
+    const denied = requireRole(ctx, 'developer');
+    if (denied) return denied;
+
+    const tenantId = Number(ctx.tenantId);
     const { boqId: rawBoqId } = await context.params;
     const boqId = parseInt(rawBoqId, 10);
-
-    if (!tenantId) {
-      return NextResponse.json(
-        { error: 'Unauthorized: Missing Tenant Context' },
-        { status: 401 }
-      );
-    }
 
     if (isNaN(boqId)) {
       return NextResponse.json(
@@ -58,7 +55,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     // Execute within the Zero-Trust transaction context
     const newItem = await withTenant(tenantId, async (tx) => {
       const [inserted] = await tx.insert(nidhivanBoqItems).values({
-        tenantId: parseInt(tenantId, 10),
+        tenantId,
         boqId,
         itemNumber: Number(itemNumber),
         sectionCode: sectionCode || null,

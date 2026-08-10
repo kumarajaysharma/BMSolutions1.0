@@ -1,34 +1,35 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db';
-import { nidhivanFinancialMetrics as financialMetrics } from '@/db/schema';
-import { and, eq } from 'drizzle-orm';
-import { withTenant } from '@/lib/auth/tenant';
+import { NextResponse, NextRequest } from "next/server";
+import { db, withTenant } from "@/db";
+import { nidhivanFinancialMetrics } from "@/db/schema";
+import { eq, desc } from "drizzle-orm";
+import { getRequestContext, requireRole } from "@/lib/request-context";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const tenantCtx = await withTenant(req);
-    if (!tenantCtx?.isAuthenticated) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const ctx = getRequestContext(req);
+    const denied = requireRole(ctx, "viewer");
+    if (denied) return denied;
 
-    const { searchParams } = new URL(req.url);
-    const projectId = searchParams.get('projectId');
+    const tenantId = Number(ctx.tenantId);
 
-    if (!projectId) {
-      return NextResponse.json({ error: 'ProjectId query parameter is mandatory' }, { status: 400 });
-    }
+    const data = await withTenant(tenantId, async (tx) => {
+      return await tx
+        .select()
+        .from(nidhivanFinancialMetrics)
+        .where(eq(nidhivanFinancialMetrics.tenantId, tenantId))
+        .orderBy(desc(nidhivanFinancialMetrics.createdAt))
+        .limit(1);
+    });
 
-    // Defense-in-depth tenantId match predicate inside the WHERE clause
-    const metrics = await db
-      .select()
-      .from(financialMetrics)
-      .where(
-        and(
-          eq(financialMetrics.tenantId, Number(tenantCtx.tenantId)),
-          eq(financialMetrics.projectId, Number(projectId))
-        )
-      );
-
-    return NextResponse.json({ success: true, data: metrics[0] || null }, { status: 200 });
+    const rows = data as Array<unknown>;
+    return NextResponse.json({ success: true, data: rows[0] ?? null }, { status: 200 });
   } catch (error) {
-    return NextResponse.json({ error: 'Internal Server Error', details: String(error) }, { status: 500 });
+    console.error("[NIDHIVAN] Metrics Fetch Error:", error);
+    return NextResponse.json(
+      { error: "Internal Server Error fetching metrics." },
+      { status: 500 }
+    );
   }
 }

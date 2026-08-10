@@ -1,8 +1,8 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { db } from '@/db';
+import { db, withTenant } from '@/db';
 import { nidhivanBoqItems } from '@/db/schema';
-import { withTenant } from '@/lib/db/with-tenant';
 import { eq, asc } from 'drizzle-orm';
+import { getRequestContext, requireRole } from '@/lib/request-context';
 
 type RouteContext = {
   params: Promise<{
@@ -12,16 +12,13 @@ type RouteContext = {
 
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
-    const tenantId = request.headers.get('x-tenant-id');
+    const ctx = getRequestContext(request);
+    const denied = requireRole(ctx, "viewer");
+    if (denied) return denied;
+
+    const tenantId = Number(ctx.tenantId);
     const { boqId: rawBoqId } = await context.params;
     const boqId = parseInt(rawBoqId, 10);
-
-    if (!tenantId) {
-      return NextResponse.json(
-        { error: 'Unauthorized: Missing Tenant Context' },
-        { status: 401 }
-      );
-    }
 
     if (isNaN(boqId)) {
       return NextResponse.json(
