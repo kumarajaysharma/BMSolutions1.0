@@ -2,22 +2,20 @@
  * src/db/schema.ts
  * BNLV Group Enterprise Schema — Core, Services, LIMSY Supreme Court Module & Nidhivan Track 2
  * Validated for CI/CD Pipeline Integration
- *
- * CHANGELOG:
- *   0007 — Added projectedIrrPercent: numeric(5,2) nullable to nidhivanFinancialMetrics.
- *          IRR tracked per reporting period to support DPR re-appraisal under shifting
- *          disbursement conditions. Column is nullable: not mandatory per reporting cycle.
  */
 
 import { 
   pgTable, serial, text, timestamp, integer, boolean, jsonb, 
-  pgEnum, uniqueIndex, uuid, numeric, foreignKey, index, bigint, real, doublePrecision 
+  pgEnum, uniqueIndex, numeric, index, bigint, doublePrecision, type AnyPgColumn 
 } from "drizzle-orm/pg-core";
-import { relations, sql } from "drizzle-orm";
+import { relations } from "drizzle-orm";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ENUMS (Source of Truth mapped to 0003_limsys_workflow.sql)
+// ENUMS (Source of Truth mapped to SQL Migrations)
 // ─────────────────────────────────────────────────────────────────────────────
+
+export const tenantPlanEnum = pgEnum('tenant_plan', ['pilot', 'starter', 'professional', 'scale', 'enterprise']);
+export const requestStatusEnum = pgEnum('request_status', ['pending', 'approved', 'rejected', 'onboarded']);
 
 export const courtLevelEnum = pgEnum("court_level", [
   'supreme_court', 'high_court', 'district_court', 'tribunal',
@@ -85,9 +83,16 @@ export const tenants = pgTable("tenants", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
-  plan: text("plan").notNull().default("scale"),
+  plan: tenantPlanEnum("plan").notNull().default("starter"),
   status: text("status").notNull().default("active"),
   region: text("region").notNull().default("ap-south-1"),
+  
+  // Stripe Billing Integration
+  stripeCustomerId: text('stripe_customer_id').unique(),
+  stripeSubscriptionId: text('stripe_subscription_id').unique(),
+  stripePriceId: text('stripe_price_id'),
+  planExpiresAt: timestamp('plan_expires_at', { withTimezone: true }),
+  
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -112,7 +117,6 @@ export const sessions = pgTable("sessions", {
   id: text("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  token: text("token").notNull().default(""),
   tokenHash: text("token_hash").notNull().default(""),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -165,7 +169,6 @@ export const aiTasks = pgTable("ai_tasks", {
 export const jobApplications = pgTable("job_applications", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
-  candidateName: text("candidate_name").notNull().default(""),
   name: text("name").notNull().default(""),
   email: text("email").notNull().default(""),
   phone: text("phone"),
@@ -192,19 +195,22 @@ export const builderComponents = pgTable("builder_components", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const clientRequests = pgTable("client_requests", {
-  id: serial("id").primaryKey(),
-  tenantId: integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
-  name: text("name").notNull().default(""),
-  email: text("email").notNull().default(""),
-  company: text("company"),
-  service: text("service").notNull().default("platform-demo"),
-  preferredDate: text("preferred_date"),
-  preferredTime: text("preferred_time"),
-  notes: text("notes"),
-  subject: text("subject").notNull().default("Client Inquiry"),
-  status: text("status").notNull().default("open"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+export const clientRequests = pgTable('client_requests', {
+  id: serial('id').primaryKey(),
+  idempotencyKey: text('idempotency_key').notNull().unique(),
+  companyName: text('company_name').notNull(),
+  contactName: text('contact_name').notNull(),
+  contactEmail: text('contact_email').notNull(),
+  contactPhone: text('contact_phone'),
+  requestedPlan: tenantPlanEnum('requested_plan').notNull().default('starter'),
+  subsidiary: text('subsidiary').notNull(),
+  message: text('message'),
+  status: requestStatusEnum('status').notNull().default('pending'),
+  processedBy: integer('processed_by').references(() => users.id, { onDelete: 'set null' }),
+  processedAt: timestamp('processed_at', { withTimezone: true }),
+  provisionedTenantId: integer('provisioned_tenant_id').references(() => tenants.id, { onDelete: 'set null' }),
+  handledByTenantId: integer('handled_by_tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const apiKeys = pgTable("api_keys", {
@@ -295,13 +301,14 @@ export const limsyCases = pgTable("limsy_cases", {
   tags: text("tags"),
   urgencyFlag: boolean("urgency_flag").notNull().default(false),
   priorityLevel: integer("priority_level").notNull().default(3),
-  parentCaseId: integer("parent_case_id"),
+  parentCaseId: integer("parent_case_id")
+    .references((): AnyPgColumn => limsyCases.id, { onDelete: 'set null' }),
   relatedCases: jsonb("related_cases"),
   documentLinks: jsonb("document_links"),
   outcomeNotes: text("outcome_notes"),
   outcomeType: text("outcome_type"),
-  estimatedFees: integer("estimated_fees"),
-  billedAmount: integer("billed_amount"),
+  estimatedFeesPaise: bigint("estimated_fees_paise", { mode: 'number' }),
+  billedAmountPaise:  bigint("billed_amount_paise",  { mode: 'number' }),
   createdBy: integer("created_by").notNull(),
   updatedBy: integer("updated_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -377,12 +384,13 @@ export const limsyOrders = pgTable("limsy_orders", {
   complianceStatus: text("compliance_status").default("pending"),
   complianceNotes: text("compliance_notes"),
   costAwarded: boolean("cost_awarded").notNull().default(false),
-  costAmount: integer("cost_amount"),
+  costAmountPaise: bigint("cost_amount_paise", { mode: 'number' }),
   costPayable: text("cost_payable"),
   documentLinks: jsonb("document_links"),
   externalLink: text("external_link"),
   appealed: boolean("appealed").notNull().default(false),
-  appealCaseId: integer("appeal_case_id"),
+  appealCaseId: integer("appeal_case_id")
+    .references((): AnyPgColumn => limsyCases.id, { onDelete: 'set null' }),
   reviewFiled: boolean("review_filed").notNull().default(false),
   isFinal: boolean("is_final").notNull().default(false),
   reportable: boolean("reportable").notNull().default(false),
@@ -475,8 +483,8 @@ export const nidhivanDprs = pgTable('nidhivan_dprs', {
   beneficiarySharePaise: bigint('beneficiary_share_paise', { mode: 'number' }).notNull().default(0),
   loanPaise: bigint('loan_paise', { mode: 'number' }).notNull().default(0),
   costBasisYear: text('cost_basis_year'),
-  contingencyPct: real('contingency_pct').notNull().default(5.0),
-  overheadPct: real('overhead_pct').notNull().default(0.0),
+  contingencyPct: numeric('contingency_pct', { precision: 5, scale: 2 }).notNull().default('5.00'),
+  overheadPct: numeric('overhead_pct', { precision: 5, scale: 2 }).notNull().default('0.00'),
   sections: jsonb('sections').default('{}'),
   consultantName: text('consultant_name'),
   preparedBy: text('prepared_by'),
@@ -506,11 +514,11 @@ export const nidhivanBoqs = pgTable('nidhivan_boqs', {
   title: text('title').notNull(),
   status: nidhivanBoqStatusEnum('status').notNull().default('draft'),
   baseAmountPaise: bigint('base_amount_paise', { mode: 'number' }).notNull().default(0),
-  contingencyPct: real('contingency_pct').notNull().default(5.0),
+  contingencyPct: numeric('contingency_pct', { precision: 5, scale: 2 }).notNull().default('5.00'),
   contingencyAmountPaise: bigint('contingency_amount_paise', { mode: 'number' }).notNull().default(0),
-  overheadPct: real('overhead_pct').notNull().default(0.0),
+  overheadPct: numeric('overhead_pct', { precision: 5, scale: 2 }).notNull().default('0.00'),
   overheadAmountPaise: bigint('overhead_amount_paise', { mode: 'number' }).notNull().default(0),
-  gstPct: real('gst_pct').notNull().default(18.0),
+  gstPct: numeric('gst_pct', { precision: 5, scale: 2 }).notNull().default('18.00'),
   gstAmountPaise: bigint('gst_amount_paise', { mode: 'number' }).notNull().default(0),
   totalAmountPaise: bigint('total_amount_paise', { mode: 'number' }).notNull().default(0),
   baseYear: text('base_year'),
@@ -564,12 +572,7 @@ export const nidhivanFinancialMetrics = pgTable('nidhivan_financial_metrics', {
   balanceAvailablePaise: bigint('balance_available_paise', { mode: 'number' }).notNull().default(0),
   physicalProgressPct: integer('physical_progress_pct').notNull().default(0),
   financialProgressPct: integer('financial_progress_pct').notNull().default(0),
-  // ── 0007 ADDITION ─────────────────────────────────────────────────────────
-  // Projected IRR at this reporting snapshot. NUMERIC(5,2) for regulatory-grade
-  // decimal precision (supports up to 999.99%). Nullable: IRR re-projection is
-  // not mandatory for every reporting cycle.
   projectedIrrPercent: numeric('projected_irr_percent', { precision: 5, scale: 2 }),
-  // ──────────────────────────────────────────────────────────────────────────
   remarks: text('remarks'),
   reportedBy: integer('reported_by').notNull().references(() => users.id, { onDelete: 'restrict' }),
   reportedAt: timestamp('reported_at', { withTimezone: true }).notNull(),
@@ -581,8 +584,30 @@ export const nidhivanFinancialMetrics = pgTable('nidhivan_financial_metrics', {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// NIDHIVAN RELATIONS DEFINITION
+// RELATIONS DEFINITIONS (Including LIMSY & Nidhivan)
 // ─────────────────────────────────────────────────────────────────────────────
+
+export const limsyCasesRelations = relations(limsyCases, ({ many }) => ({
+  benchAssignments: many(limsyBenchAssignments),
+  hearings: many(limsyHearings),
+  orders: many(limsyOrders),
+}));
+
+export const limsyBenchAssignmentsRelations = relations(limsyBenchAssignments, ({ one }) => ({
+  case: one(limsyCases, {
+    fields: [limsyBenchAssignments.caseId],
+    references: [limsyCases.id],
+  }),
+}));
+
+export const limsyHearingsRelations = relations(limsyHearings, ({ one }) => ({
+  case: one(limsyCases, { fields: [limsyHearings.caseId], references: [limsyCases.id] }),
+}));
+
+export const limsyOrdersRelations = relations(limsyOrders, ({ one }) => ({
+  case: one(limsyCases, { fields: [limsyOrders.caseId], references: [limsyCases.id] }),
+  hearing: one(limsyHearings, { fields: [limsyOrders.hearingId], references: [limsyHearings.id] }),
+}));
 
 export const nidhivanProjectsRelations = relations(nidhivanProjects, ({ many }) => ({
   dprs: many(nidhivanDprs),
@@ -631,6 +656,15 @@ export const nidhivanFinancialMetricsRelations = relations(nidhivanFinancialMetr
 // ─────────────────────────────────────────────────────────────────────────────
 // EXPORTED TYPES (Strict Type Safety)
 // ─────────────────────────────────────────────────────────────────────────────
+export type LimsyCase                = typeof limsyCases.$inferSelect;
+export type NewLimsyCase             = typeof limsyCases.$inferInsert;
+export type LimsyBenchAssignment     = typeof limsyBenchAssignments.$inferSelect;
+export type NewLimsyBenchAssignment  = typeof limsyBenchAssignments.$inferInsert;
+export type LimsyHearing             = typeof limsyHearings.$inferSelect;
+export type NewLimsyHearing          = typeof limsyHearings.$inferInsert;
+export type LimsyOrder               = typeof limsyOrders.$inferSelect;
+export type NewLimsyOrder            = typeof limsyOrders.$inferInsert;
+
 export type NidhivanProject = typeof nidhivanProjects.$inferSelect;
 export type NewNidhivanProject = typeof nidhivanProjects.$inferInsert;
 
