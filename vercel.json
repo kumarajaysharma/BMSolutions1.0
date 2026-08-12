@@ -30,7 +30,7 @@
       "has": [
         {
           "type": "host",
-          "value": ":subdomain.bnlvconsulting.com"
+          "value": "(?<subdomain>[^.]+)\\.bnlvconsulting\\.com"
         }
       ],
       "destination": "/:subdomain/:path*"
