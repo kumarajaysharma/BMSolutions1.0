@@ -6,6 +6,7 @@
  * Runs on the Next.js Edge Runtime before every matched request.
  *
  * SECURITY & ROUTING FEATURES:
+ *   0. WWW → Apex redirect: Enforces canonical domain before any other logic.
  *   1. Host-Header Tenant Resolution: Maps subdomains (*.bnlvconsulting.com) to tenant slugs.
  *   2. Zero-Trust Header Stripping: Removes client-supplied session & tenant headers to prevent injection.
  *   3. Edge-Native Speed: Decrypts the JWT locally using `jose` (< 5ms) instead of slow DB fetches.
@@ -39,11 +40,11 @@ const PUBLIC_PATHS = new Set([
   "/api/auth/logout",
   "/api/auth/session", // GET is public for UI hydration, POST is protected by internal secret
   "/api/health",
-  
+
   // System Pages
   "/login",
   "/403",
-  
+
   // Public Marketing Website Pages
   "/",
   "/home",
@@ -54,7 +55,7 @@ const PUBLIC_PATHS = new Set([
   "/bms",
   "/nidhivan",
   "/limsy",
-  "/vihang"
+  "/vihang",
 ]);
 
 /** Paths that strictly require at least 'admin' level access */
@@ -70,7 +71,7 @@ function unauthorizedResponse(isApiRoute: boolean, req: NextRequest): NextRespon
   }
   const loginUrl = new URL("/login", req.nextUrl.origin);
   loginUrl.searchParams.set("next", req.nextUrl.pathname);
-  
+
   const response = NextResponse.redirect(loginUrl);
   // Clear any malformed cookies
   response.cookies.delete(SESSION_COOKIE);
@@ -92,6 +93,18 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
   const { pathname, searchParams } = req.nextUrl;
   const hostname = req.headers.get("host") || "";
 
+  // ── 0. WWW → Apex Canonical Redirect (301 Permanent) ─────────────────────
+  // Must execute before all tenant resolution and auth logic.
+  // vercel.json redirects are overridden by middleware — this is the
+  // authoritative www → apex enforcement point.
+  if (hostname === "www.bnlvconsulting.com") {
+    const url = req.nextUrl.clone();
+    url.host = "bnlvconsulting.com";
+    url.protocol = "https:";
+    return NextResponse.redirect(url, { status: 301 });
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   // ── 1. Host-Header Tenant Resolution ─────────────────────────────────────
   let tenantSlug = "bnlv"; // Default apex tenant (BNLV Group)
 
@@ -108,7 +121,7 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
     tenantSlug = "bms";
   }
 
-  // PATCHED: Restrict query-parameter tenant override to non-production environments 
+  // PATCHED: Restrict query-parameter tenant override to non-production environments
   // to eliminate the unauthenticated tenant spoofing vector in production.
   if (searchParams.has("tenant") && process.env.NODE_ENV !== "production") {
     tenantSlug = searchParams.get("tenant") || tenantSlug;
@@ -149,7 +162,7 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
 
   // ── 5. Role-Based Access Control (RBAC) ───────────────────────────────────
   const isAdminRoute = ADMIN_PREFIXES.some((p) => pathname.startsWith(p));
-  
+
   if (isAdminRoute && !hasMinimumRole(session.role as AppRole, "admin")) {
     return forbiddenResponse(isApiRoute, req);
   }
