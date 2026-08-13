@@ -2,8 +2,8 @@
  * scripts/vercel-build.mjs
  * 
  * Custom build wrapper for Vercel deployment.
- * Bridges Next.js proxy output (.next/server/proxy/) to Vercel's
- * expected proxy.js.nft.json and middleware artifacts.
+ * Generates only the required proxy.js.nft.json and middleware.js.nft.json trace manifests
+ * while leaving native Next.js 16 runtime execution untouched.
  */
 
 import { spawn } from 'child_process';
@@ -15,10 +15,10 @@ const require = createRequire(import.meta.url);
 const SERVER_DIR = path.join(process.cwd(), '.next', 'server');
 const PROXY_DIR = path.join(SERVER_DIR, 'proxy');
 const MW_DIR = path.join(SERVER_DIR, 'middleware');
-const NFT_PATH = path.join(SERVER_DIR, 'proxy.js.nft.json');
-const PROXY_JS_PATH = path.join(SERVER_DIR, 'proxy.js');
+const NFT_PATH_PROXY = path.join(SERVER_DIR, 'proxy.js.nft.json');
+const NFT_PATH_MW = path.join(SERVER_DIR, 'middleware.js.nft.json');
 
-function generateArtifacts() {
+function generateNft() {
   try {
     const targetDir = fs.existsSync(PROXY_DIR) ? PROXY_DIR : (fs.existsSync(MW_DIR) ? MW_DIR : null);
     if (!targetDir) return;
@@ -34,36 +34,24 @@ function generateArtifacts() {
     }
     walk(targetDir);
 
-    // 1. Create proxy.js.nft.json manifest (and legacy middleware equivalent for safety)
-    if (!fs.existsSync(NFT_PATH) && files.length > 0) {
-      fs.writeFileSync(NFT_PATH, JSON.stringify({ version: 1, files }));
-      console.log(`\n[nft-shim] ✓ Created proxy.js.nft.json (${files.length} entries)\n`);
-    }
-    const legacyNftPath = path.join(SERVER_DIR, 'middleware.js.nft.json');
-    if (!fs.existsSync(legacyNftPath) && files.length > 0) {
-      fs.writeFileSync(legacyNftPath, JSON.stringify({ version: 1, files }));
-    }
-
-    // 2. Create proxy.js lstat stub for Vercel validator
-    if (!fs.existsSync(PROXY_JS_PATH)) {
-      const candidate = path.join(targetDir, 'index.js');
-      if (fs.existsSync(candidate)) {
-        fs.writeFileSync(PROXY_JS_PATH, `module.exports = require('./proxy/index.js');`);
-      } else {
-        fs.writeFileSync(PROXY_JS_PATH, `module.exports = {};`);
+    if (files.length > 0) {
+      const nftPayload = JSON.stringify({ version: 1, files });
+      
+      if (!fs.existsSync(NFT_PATH_PROXY)) {
+        fs.writeFileSync(NFT_PATH_PROXY, nftPayload);
+        console.log(`\n[nft-shim] ✓ Created proxy.js.nft.json (${files.length} entries)\n`);
       }
-      console.log(`[nft-shim] ✓ Created proxy.js lstat stub`);
-    }
-    const legacyJsPath = path.join(SERVER_DIR, 'middleware.js');
-    if (!fs.existsSync(legacyJsPath)) {
-      fs.writeFileSync(legacyJsPath, `module.exports = {};`);
+      if (!fs.existsSync(NFT_PATH_MW)) {
+        fs.writeFileSync(NFT_PATH_MW, nftPayload);
+        console.log(`\n[nft-shim] ✓ Created middleware.js.nft.json (${files.length} entries)\n`);
+      }
     }
   } catch (err) {
-    console.error('[nft-shim] Error generating artifacts:', err);
+    console.error('[nft-shim] Error generating NFT manifests:', err);
   }
 }
 
-const watcher = setInterval(generateArtifacts, 50);
+const watcher = setInterval(generateNft, 50);
 
 const nextBin = require.resolve('next/dist/bin/next');
 const child = spawn(process.execPath, [nextBin, 'build'], {
@@ -73,7 +61,7 @@ const child = spawn(process.execPath, [nextBin, 'build'], {
 
 child.on('exit', (code) => {
   clearInterval(watcher);
-  generateArtifacts();
+  generateNft();
   process.exit(code ?? 0);
 });
 
