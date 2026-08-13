@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "postbuild": "node scripts/create-proxy-nft.mjs",
+    "postbuild": "node scripts/create-proxy-nft.cjs",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
