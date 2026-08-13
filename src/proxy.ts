@@ -1,30 +1,16 @@
 /**
  * src/proxy.ts
  *
- * BNLV Studio — Zero-Trust Request & Host-Header Tenant Resolution Proxy
- * ===========================================================================
- * Runs on the Next.js Edge Runtime before every matched request.
- *
- * SECURITY & ROUTING FEATURES:
- *   0. WWW → Apex redirect: Enforces canonical domain before any other logic.
- *   1. Host-Header Tenant Resolution: Maps subdomains (*.bnlvconsulting.com) to tenant slugs.
- *   2. Zero-Trust Header Stripping: Removes client-supplied session & tenant headers to prevent injection.
- *   3. Edge-Native Speed: Decrypts the JWT locally using `jose` (< 5ms) instead of slow DB fetches.
- *   4. Context Injection: Safely passes verified tenantId, tenantSlug, userId, and role downstream.
- *   5. Granular RBAC: Enforces role hierarchy for admin-level UI and API routes.
+ * BNLV Studio — Native Next.js 16 Proxy (Edge Runtime)
+ * Replaces legacy middleware convention.
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { decrypt } from "@/lib/jwt"; // Edge-safe cryptographic import
+import { decrypt } from "@/lib/jwt";
 import { hasMinimumRole, AppRole } from "@/lib/roles";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONSTANTS & ROUTE DEFINITIONS
-// ─────────────────────────────────────────────────────────────────────────────
+const SESSION_COOKIE = "bms_session";
 
-const SESSION_COOKIE = "bms_session"; // Matches our login/logout routes
-
-/** Headers injected by proxy — stripped from incoming requests to prevent spoofing */
 const MANAGED_HEADERS = [
   "x-tenant-id",
   "x-user-id",
@@ -33,19 +19,13 @@ const MANAGED_HEADERS = [
   "x-tenant-slug",
 ];
 
-/** Paths that require no authentication */
 const PUBLIC_PATHS = new Set([
-  // Authentication & System API
   "/api/auth/login",
   "/api/auth/logout",
-  "/api/auth/session", // GET is public for UI hydration, POST is protected by internal secret
+  "/api/auth/session",
   "/api/health",
-
-  // System Pages
   "/login",
   "/403",
-
-  // Public Marketing Website Pages
   "/",
   "/home",
   "/about",
@@ -58,12 +38,7 @@ const PUBLIC_PATHS = new Set([
   "/vihang",
 ]);
 
-/** Paths that strictly require at least 'admin' level access */
 const ADMIN_PREFIXES = ["/admin", "/api/admin"];
-
-// ─────────────────────────────────────────────────────────────────────────────
-// RESPONSE HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
 
 function unauthorizedResponse(isApiRoute: boolean, req: NextRequest): NextResponse {
   if (isApiRoute) {
@@ -71,9 +46,7 @@ function unauthorizedResponse(isApiRoute: boolean, req: NextRequest): NextRespon
   }
   const loginUrl = new URL("/login", req.nextUrl.origin);
   loginUrl.searchParams.set("next", req.nextUrl.pathname);
-
   const response = NextResponse.redirect(loginUrl);
-  // Clear any malformed cookies
   response.cookies.delete(SESSION_COOKIE);
   return response;
 }
@@ -85,29 +58,18 @@ function forbiddenResponse(isApiRoute: boolean, req: NextRequest): NextResponse 
   return NextResponse.redirect(new URL("/403", req.nextUrl.origin));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PROXY ENTRY POINT
-// ─────────────────────────────────────────────────────────────────────────────
-
 export async function proxy(req: NextRequest): Promise<NextResponse> {
   const { pathname, searchParams } = req.nextUrl;
   const hostname = req.headers.get("host") || "";
 
-  // ── 0. WWW → Apex Canonical Redirect (301 Permanent) ─────────────────────
-  // Must execute before all tenant resolution and auth logic.
-  // vercel.json redirects are overridden by middleware — this is the
-  // authoritative www → apex enforcement point.
   if (hostname === "www.bnlvconsulting.com") {
     const url = req.nextUrl.clone();
     url.host = "bnlvconsulting.com";
     url.protocol = "https:";
     return NextResponse.redirect(url, { status: 301 });
   }
-  // ─────────────────────────────────────────────────────────────────────────
 
-  // ── 1. Host-Header Tenant Resolution ─────────────────────────────────────
-  let tenantSlug = "bnlv"; // Default apex tenant (BNLV Group)
-
+  let tenantSlug = "bnlv";
   if (hostname.startsWith("bms.")) {
     tenantSlug = "bms";
   } else if (hostname.startsWith("nidhivan.")) {
@@ -117,32 +79,23 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
   } else if (hostname.startsWith("vihang.")) {
     tenantSlug = "vihang";
   } else if (hostname.includes("bmsolutions-")) {
-    // Vercel preview/deployment URL fallback mapping
     tenantSlug = "bms";
   }
 
-  // PATCHED: Restrict query-parameter tenant override to non-production environments
-  // to eliminate the unauthenticated tenant spoofing vector in production.
   if (searchParams.has("tenant") && process.env.NODE_ENV !== "production") {
     tenantSlug = searchParams.get("tenant") || tenantSlug;
   }
 
-  // ── 2. Strip client-supplied managed headers (Injection Prevention) ───────
   const sanitisedHeaders = new Headers(req.headers);
   for (const h of MANAGED_HEADERS) sanitisedHeaders.delete(h);
-
-  // Safely inject resolved tenant slug for downstream handlers and public pages
   sanitisedHeaders.set("x-tenant-slug", tenantSlug);
 
   const passThrough = () => NextResponse.next({ request: { headers: sanitisedHeaders } });
 
-  // ── 3. Classify the route & bypass public assets ──────────────────────────
   const isApiRoute = pathname.startsWith("/api/");
   const isNextAsset = pathname.startsWith("/_next/") || pathname.startsWith("/static/");
 
-  // Allow next assets and public marketing pages to pass through without JWT checks
   if (isNextAsset || PUBLIC_PATHS.has(pathname)) {
-    // R13 FIX: Gate /api/auth/session POST behind authentication
     if (pathname === "/api/auth/session" && req.method !== "GET") {
       const token = req.cookies.get(SESSION_COOKIE)?.value;
       if (!token || !(await decrypt(token))) {
@@ -152,7 +105,6 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
     return passThrough();
   }
 
-  // ── 4. Edge-Native JWT Verification (Lightning Fast) ──────────────────────
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const session = token ? await decrypt(token) : null;
 
@@ -160,14 +112,11 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
     return unauthorizedResponse(isApiRoute, req);
   }
 
-  // ── 5. Role-Based Access Control (RBAC) ───────────────────────────────────
   const isAdminRoute = ADMIN_PREFIXES.some((p) => pathname.startsWith(p));
-
   if (isAdminRoute && !hasMinimumRole(session.role as AppRole, "admin")) {
     return forbiddenResponse(isApiRoute, req);
   }
 
-  // ── 6. Inject verified session context for downstream handlers ────────────
   sanitisedHeaders.set("x-tenant-id", session.tenantId.toString());
   sanitisedHeaders.set("x-user-id", session.userId.toString());
   sanitisedHeaders.set("x-user-role", session.role);
@@ -177,3 +126,9 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
 
   return NextResponse.next({ request: { headers: sanitisedHeaders } });
 }
+
+export const config = {
+  matcher: [
+    "/((?!api|_next/static|_next/image|favicon.ico|favicon.png|robots.txt|sitemap.xml).*)",
+  ],
+};
