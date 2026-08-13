@@ -1,8 +1,11 @@
 /**
  * scripts/vercel-build.mjs
  * 
- * Robust build wrapper using require.resolve for binary pathing.
+ * Custom build wrapper for Vercel deployment.
+ * Generates middleware.js.nft.json and a lightweight middleware.js lstat stub
+ * to satisfy Vercel's build packaging under Next.js 16 Turbopack.
  */
+
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
@@ -12,10 +15,11 @@ const require = createRequire(import.meta.url);
 const SERVER_DIR = path.join(process.cwd(), '.next', 'server');
 const MW_DIR = path.join(SERVER_DIR, 'middleware');
 const NFT_PATH = path.join(SERVER_DIR, 'middleware.js.nft.json');
+const MW_JS_PATH = path.join(SERVER_DIR, 'middleware.js');
 
-function generateNft() {
+function generateArtifacts() {
   try {
-    if (!fs.existsSync(MW_DIR) || fs.existsSync(NFT_PATH)) return;
+    if (!fs.existsSync(MW_DIR)) return;
 
     const files = [];
     function walk(dir) {
@@ -27,22 +31,31 @@ function generateNft() {
       }
     }
     walk(MW_DIR);
-    if (files.length > 0) {
+
+    // 1. Create NFT manifest if missing
+    if (!fs.existsSync(NFT_PATH) && files.length > 0) {
       fs.writeFileSync(NFT_PATH, JSON.stringify({ version: 1, files }));
       console.log(`\n[nft-shim] ✓ Created middleware.js.nft.json (${files.length} entries)\n`);
     }
+
+    // 2. Create middleware.js stub for Vercel lstat check if missing
+    if (!fs.existsSync(MW_JS_PATH)) {
+      const candidate = path.join(MW_DIR, 'index.js');
+      if (fs.existsSync(candidate)) {
+        fs.writeFileSync(MW_JS_PATH, `module.exports = require('./middleware/index.js');`);
+      } else {
+        fs.writeFileSync(MW_JS_PATH, `module.exports = {};`);
+      }
+      console.log(`[nft-shim] ✓ Created middleware.js lstat stub`);
+    }
   } catch (err) {
-    console.error('[nft-shim] Error generating NFT:', err);
+    console.error('[nft-shim] Error generating artifacts:', err);
   }
 }
 
-const watcher = setInterval(generateNft, 50);
+const watcher = setInterval(generateArtifacts, 50);
 
-// Resolve next binary path dynamically
 const nextBin = require.resolve('next/dist/bin/next');
-
-console.log(`[vercel-build] Spawning: node ${nextBin} build`);
-
 const child = spawn(process.execPath, [nextBin, 'build'], {
   stdio: 'inherit',
   env: { ...process.env },
@@ -50,8 +63,7 @@ const child = spawn(process.execPath, [nextBin, 'build'], {
 
 child.on('exit', (code) => {
   clearInterval(watcher);
-  generateNft();
-  console.log(`[vercel-build] Process exited with code ${code}`);
+  generateArtifacts();
   process.exit(code ?? 0);
 });
 
