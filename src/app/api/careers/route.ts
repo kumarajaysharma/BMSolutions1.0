@@ -4,6 +4,9 @@
  * Hardened Career Applications API Route
  * - GET: Protected by admin role check (prevents public exposure of applicant PII).
  * - POST: Public intake with input sanitization, length capping, and audit logging.
+ *
+ * FIX: Removed candidateName from .values() — column was removed in schema
+ * migration 0009. Only `name` column exists on jobApplications.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -16,7 +19,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const ctx = getRequestContext(req);
-  
+
   // Secure the GET endpoint: only internal staff with minimum 'admin' role can view candidate PII
   const denied = requireRole(ctx, "admin");
   if (denied) return denied;
@@ -26,7 +29,7 @@ export async function GET(req: NextRequest) {
     .from(jobApplications)
     .orderBy(desc(jobApplications.id))
     .limit(60);
-    
+
   return NextResponse.json(rows);
 }
 
@@ -46,9 +49,12 @@ export async function POST(req: NextRequest) {
 
     const tenantIdHeader = req.headers.get("x-tenant-id");
     const tenantId: number = tenantIdHeader ? Number(tenantIdHeader) : Number(body.tenantId ?? 1);
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "";
+    const ip = req.headers.get("cf-connecting-ip")
+      ?? req.headers.get("x-real-ip")
+      ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+      ?? "";
 
-    const roleSlug = String(body.roleSlug ?? "general").slice(0, 60);
+    const roleSlug  = String(body.roleSlug  ?? "general").slice(0, 60);
     const roleTitle = String(body.roleTitle ?? "General application").slice(0, 120);
 
     const [row] = await db
@@ -57,21 +63,22 @@ export async function POST(req: NextRequest) {
         tenantId,
         roleSlug,
         roleTitle,
+        // candidateName removed — column dropped in migration 0009.
+        // `name` is the single authoritative column.
         name,
-        candidateName: name,
         email,
-        position: roleTitle,
+        position:  roleTitle,
         portfolio: String(body.portfolio ?? "").slice(0, 300),
-        note: String(body.note ?? "").slice(0, 2000),
+        note:      String(body.note      ?? "").slice(0, 2000),
       })
       .returning();
 
-    // Audit log entry for DPDP compliance tracking
+    // Audit log entry for DPDP compliance tracking — actor format per ADR-001
     await db.insert(auditLogs).values({
       tenantId,
-      actor: "careers-page",
-      action: `job.application:${roleSlug}`,
-      target: email,
+      actor:     "system:careers-page",
+      action:    `job.application:${roleSlug}`,
+      target:    email,
       ipAddress: ip,
     });
 
