@@ -4,14 +4,21 @@
  * Next.js Edge Middleware entry point.
  * Delegates all routing, auth, and security logic to src/proxy.ts.
  *
- * IMPORTANT: config must be declared statically in this file.
- * Use @/ alias for imports — relative paths break Turbopack NFT generation
- * in production builds (ENOENT middleware.js.nft.json).
+ * RULES:
+ * 1. config must be declared statically inline — never re-exported.
+ * 2. Use explicit async function declaration — not const assignment.
+ *    Turbopack's middleware NFT generator requires a named function.
+ * 3. proxy.ts must NOT export config — two config exports in the module
+ *    graph cause Turbopack to fail generating middleware.js.nft.json.
+ * 4. Use @/ alias — relative paths break NFT resolution on Vercel.
  */
 
+import type { NextRequest } from "next/server";
 import { proxy } from "@/proxy";
 
-export const middleware = proxy;
+export async function middleware(request: NextRequest) {
+  return proxy(request);
+}
 
 export const config = {
   matcher: [
