@@ -179,11 +179,7 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MATCHER CONFIGURATION
+// NOTE: matcher config is declared in middleware.ts (project root).
+// It must not be exported from this file — Turbopack's middleware NFT
+// generator fails when the imported proxy module also exports `config`.
 // ─────────────────────────────────────────────────────────────────────────────
-export const config = {
-  matcher: [
-    // Apply to all routes EXCEPT static files, images, and favicon
-    "/((?!_next/static|_next/image|favicon\\.ico).*)",
-  ],
-};
