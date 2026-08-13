@@ -1,11 +1,9 @@
 /**
  * src/proxy.ts
  *
- * BNLV Studio — Native Next.js 16 Proxy (Edge Runtime)
+ * BNLV Studio — Native Next.js 16 Proxy (Node.js Runtime)
  * Replaces legacy middleware convention.
  */
-
-export const runtime = "edge";
 
 import { NextRequest, NextResponse } from "next/server";
 import { decrypt } from "@/lib/jwt";
