@@ -15,7 +15,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { decrypt } from "@/lib/auth";
+import { decrypt } from "@/lib/jwt"; // Edge-safe cryptographic import
 import { hasMinimumRole, AppRole } from "@/lib/roles";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -177,9 +177,3 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
 
   return NextResponse.next({ request: { headers: sanitisedHeaders } });
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// NOTE: matcher config is declared in middleware.ts (project root).
-// It must not be exported from this file — Turbopack's middleware NFT
-// generator fails when the imported proxy module also exports `config`.
-// ─────────────────────────────────────────────────────────────────────────────
