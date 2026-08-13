@@ -4,23 +4,19 @@
  * Next.js Edge Middleware entry point.
  * Delegates all routing, auth, and security logic to src/proxy.ts.
  *
- * IMPORTANT: `config` must be declared statically in this file.
- * Turbopack performs static analysis on `config` at compile time —
- * re-exporting it from another module causes a build failure.
- * Do NOT change config to an import/re-export.
+ * IMPORTANT: config must be declared statically in this file.
+ * Use @/ alias for imports — relative paths break Turbopack NFT generation
+ * in production builds (ENOENT middleware.js.nft.json).
  */
 
-import type { NextRequest } from "next/server";
-import { proxy } from "./src/proxy";
+import { proxy } from "@/proxy";
 
-export async function middleware(req: NextRequest) {
-  return proxy(req);
-}
+export const middleware = proxy;
 
-// Must be declared inline — cannot be imported or re-exported from src/proxy.ts
 export const config = {
   matcher: [
-    // Apply to all routes EXCEPT static files, images, and favicon
-    "/((?!_next/static|_next/image|favicon\\.ico).*)",
+    // Match all routes EXCEPT static assets, image optimizer, and public files.
+    // API routes are intentionally included — proxy.ts enforces JWT + RBAC on them.
+    "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.png|robots\\.txt|sitemap\\.xml).*)",
   ],
 };
