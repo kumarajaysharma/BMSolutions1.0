@@ -1,5 +1,5 @@
 {
-  "buildCommand": "next build",
+  "buildCommand": "node scripts/vercel-build.mjs",
   "redirects": [
     {
       "source": "/:path*",
