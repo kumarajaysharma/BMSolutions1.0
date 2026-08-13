@@ -2,8 +2,8 @@
  * scripts/vercel-build.mjs
  * 
  * Custom build wrapper for Vercel deployment.
- * Bridges Next.js 16 proxy output (.next/server/proxy/) to Vercel's
- * expected proxy.js.nft.json and proxy.js build artifacts.
+ * Bridges Next.js proxy output (.next/server/proxy/) to Vercel's
+ * expected proxy.js.nft.json and middleware artifacts.
  */
 
 import { spawn } from 'child_process';
@@ -20,7 +20,7 @@ const PROXY_JS_PATH = path.join(SERVER_DIR, 'proxy.js');
 
 function generateArtifacts() {
   try {
-    const targetDir = fs.existsSync(PROXY_DIR) ? PROXY_DIR : (fs.existsSync(MW_DIR) ? mwDir : null);
+    const targetDir = fs.existsSync(PROXY_DIR) ? PROXY_DIR : (fs.existsSync(MW_DIR) ? MW_DIR : null);
     if (!targetDir) return;
 
     const files = [];
