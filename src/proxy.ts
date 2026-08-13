@@ -5,6 +5,8 @@
  * Replaces legacy middleware convention.
  */
 
+export const runtime = "edge";
+
 import { NextRequest, NextResponse } from "next/server";
 import { decrypt } from "@/lib/jwt";
 import { hasMinimumRole, AppRole } from "@/lib/roles";
