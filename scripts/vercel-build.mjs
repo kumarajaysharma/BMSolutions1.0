@@ -1,13 +1,14 @@
 /**
  * scripts/vercel-build.mjs
  * 
- * Custom build wrapper for Vercel deployment.
- * Spawns Next.js via direct node binary invocation for absolute path reliability.
+ * Robust build wrapper using require.resolve for binary pathing.
  */
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { createRequire } from 'module';
 
+const require = createRequire(import.meta.url);
 const SERVER_DIR = path.join(process.cwd(), '.next', 'server');
 const MW_DIR = path.join(SERVER_DIR, 'middleware');
 const NFT_PATH = path.join(SERVER_DIR, 'middleware.js.nft.json');
@@ -37,8 +38,11 @@ function generateNft() {
 
 const watcher = setInterval(generateNft, 50);
 
-// Use direct Node invocation to next binary to prevent spawn ENOENT on Linux runners
-const nextBin = path.join(process.cwd(), 'node_modules', 'next', 'dist', 'bin', 'next');
+// Resolve next binary path dynamically
+const nextBin = require.resolve('next/dist/bin/next');
+
+console.log(`[vercel-build] Spawning: node ${nextBin} build`);
+
 const child = spawn(process.execPath, [nextBin, 'build'], {
   stdio: 'inherit',
   env: { ...process.env },
@@ -47,11 +51,12 @@ const child = spawn(process.execPath, [nextBin, 'build'], {
 child.on('exit', (code) => {
   clearInterval(watcher);
   generateNft();
+  console.log(`[vercel-build] Process exited with code ${code}`);
   process.exit(code ?? 0);
 });
 
 child.on('error', (err) => {
   clearInterval(watcher);
-  console.error('[vercel-build] Spawn execution error:', err);
+  console.error('[vercel-build] Fatal spawn error:', err);
   process.exit(1);
 });
