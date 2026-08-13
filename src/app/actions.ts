@@ -16,8 +16,10 @@ const IntakeSchema = z.object({
 });
 
 export async function createClientRequest(
+  _prevState: { success: boolean; error?: string },
   formData: FormData
 ): Promise<{ success: boolean; error?: string }> {
+
   const raw = {
     companyName:   formData.get('companyName'),
     contactName:   formData.get('contactName'),
