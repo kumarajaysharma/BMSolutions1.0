@@ -2,38 +2,26 @@
  * scripts/vercel-build.mjs
  *
  * Custom build wrapper for Vercel deployment.
- *
- * ROOT CAUSE:
- *   Vercel's modifyConfig injects a finalization step INSIDE next build that
- *   reads .next/server/middleware.js.nft.json. Next.js 16 Turbopack outputs
- *   middleware to .next/server/middleware/ (a directory) and never generates
- *   this file. The build fails with ENOENT at "Finalizing page optimization".
- *
- * SOLUTION:
- *   Run next build as a child process. Poll for .next/server/middleware/ to
- *   appear every 50ms. The moment it does, write middleware.js.nft.json from
- *   its contents. Vercel's finalization step finds the file and succeeds.
- *
- * NOTE: .mjs required — package.json has "type": "module".
- * Set in vercel.json: "buildCommand": "node scripts/vercel-build.mjs"
+ * Automatically provisions both middleware.js.nft.json and middleware.js
+ * to satisfy Vercel's legacy packaging expectations under Next.js 16 Turbopack.
  */
 
-import { spawn }    from 'child_process';
-import fs           from 'fs';
-import path         from 'path';
+import { spawn } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 
-const cwd        = process.cwd();
+const cwd = process.cwd();
 const SERVER_DIR = path.join(cwd, '.next', 'server');
-const MW_DIR     = path.join(SERVER_DIR, 'middleware');
-const NFT_PATH   = path.join(SERVER_DIR, 'middleware.js.nft.json');
-const POLL_MS    = 50;
+const MW_DIR = path.join(SERVER_DIR, 'middleware');
+const NFT_PATH = path.join(SERVER_DIR, 'middleware.js.nft.json');
+const MW_JS_PATH = path.join(SERVER_DIR, 'middleware.js');
+const POLL_MS = 50;
 
-// ── NFT file generator ────────────────────────────────────────────────────────
-
-function generateNft() {
+function generateArtifacts() {
   const files = [];
 
   function walk(dir) {
+    if (!fs.existsSync(dir)) return;
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -45,26 +33,44 @@ function generateNft() {
   }
 
   walk(MW_DIR);
-  fs.writeFileSync(NFT_PATH, JSON.stringify({ version: 1, files }));
-  console.log(`\n[nft-shim] ✓ Created middleware.js.nft.json (${files.length} entries)\n`);
-}
 
-// ── Background watcher ────────────────────────────────────────────────────────
-// Fires the moment Turbopack writes .next/server/middleware/ — before
-// Vercel's "Finalizing page optimization" step attempts to read the NFT file.
+  // 1. Write NFT file if missing
+  if (!fs.existsSync(NFT_PATH) && files.length > 0) {
+    fs.writeFileSync(NFT_PATH, JSON.stringify({ version: 1, files }));
+    console.log(`\n[nft-shim] ✓ Created middleware.js.nft.json (${files.length} entries)\n`);
+  }
+
+  // 2. Ensure middleware.js exists for Vercel's lstat checker
+  if (!fs.existsSync(MW_JS_PATH)) {
+    const candidateIndex = path.join(MW_DIR, 'index.js');
+    if (fs.existsSync(candidateIndex)) {
+      fs.copyFileSync(candidateIndex, MW_JS_PATH);
+      console.log(`[nft-shim] ✓ Copied middleware/index.js to middleware.js`);
+    } else if (files.length > 0) {
+      const firstFile = path.join(SERVER_DIR, files[0]);
+      if (fs.existsSync(firstFile)) {
+        fs.copyFileSync(firstFile, MW_JS_PATH);
+        console.log(`[nft-shim] ✓ Copied ${files[0]} to middleware.js`);
+      }
+    }
+
+    // Fallback stub if still not present
+    if (!fs.existsSync(MW_JS_PATH)) {
+      fs.writeFileSync(MW_JS_PATH, 'module.exports = {};');
+      console.log(`[nft-shim] ✓ Created fallback middleware.js stub`);
+    }
+  }
+}
 
 const watcher = setInterval(() => {
   try {
-    if (fs.existsSync(MW_DIR) && !fs.existsSync(NFT_PATH)) {
-      generateNft();
-      clearInterval(watcher);
+    if (fs.existsSync(MW_DIR)) {
+      generateArtifacts();
     }
   } catch {
-    // Directory may be partially written — retry on next poll
+    // Retry on next poll if files are still being written
   }
 }, POLL_MS);
-
-// ── Spawn next build ──────────────────────────────────────────────────────────
 
 const child = spawn('next', ['build'], {
   stdio: 'inherit',
@@ -74,6 +80,11 @@ const child = spawn('next', ['build'], {
 
 child.on('exit', (code) => {
   clearInterval(watcher);
+  try {
+    generateArtifacts();
+  } catch (e) {
+    console.error('[nft-shim] Final generation error:', e);
+  }
   process.exit(code ?? 0);
 });
 
