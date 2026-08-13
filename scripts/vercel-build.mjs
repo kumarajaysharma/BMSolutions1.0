@@ -2,12 +2,7 @@
  * scripts/vercel-build.mjs
  * 
  * Custom build wrapper for Vercel deployment under Next.js 16 + Turbopack.
- * 1. Runs next build.
- * 2. Locates compiled proxy output in .next/server/proxy/ (or middleware/).
- * 3. Generates physical proxy.js and middleware.js entrypoint stubs.
- * 4. Generates comprehensive proxy.js.nft.json and middleware.js.nft.json files
- *    tracing all compiled assets AND required node_modules (next, jose) so Vercel's
- *    Lambda launcher successfully includes next/dist/server/node-environment.
+ * Traces compiled assets AND required external node_modules (next, jose, @swc/helpers).
  */
 
 import { spawn } from 'child_process';
@@ -42,8 +37,8 @@ function generateArtifacts() {
     }
     walk(targetDir);
 
-    // 2. Walk node_modules (next and jose) so Vercel's NFT tracer includes server environment modules
-    const includePkgs = ['next', 'jose'];
+    // 2. Walk required runtime packages so Vercel's NFT tracer includes SWC helpers and server modules
+    const includePkgs = ['next', 'jose', '@swc/helpers'];
     for (const pkg of includePkgs) {
       const pkgDir = path.join(cwd, 'node_modules', pkg);
       if (fs.existsSync(pkgDir)) {
