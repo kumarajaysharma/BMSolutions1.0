@@ -6,7 +6,7 @@
       "has": [
         {
           "type": "host",
-          "value": "www.bnlvconsulting.com"
+          "value": "[www.bnlvconsulting.com](https://www.bnlvconsulting.com)"
         }
       ],
       "destination": "https://bnlvconsulting.com/:path*",
