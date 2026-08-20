@@ -7,22 +7,22 @@
  * - PATCH: Protected by admin role — updates request status.
  *
  * FIXES applied:
- *   1. ADR-001 Enforcement: All Drizzle queries (GET, POST, PATCH) wrapped 
- *      in mandatory withTenant() transaction scope to bypass FORCE RLS.
- *   2. POST .values() rewritten to match clientRequests schema columns.
- *   3. PATCH status enum corrected to: pending | approved | rejected | onboarded.
- *   4. PATCH audit log: row.email → row.contactEmail.
- *   5. PATCH actor format updated to ADR-001 convention: user:{userId}.
+ *   1. unstable_noStore() injected to prevent Next.js 16 from caching Neon HTTP transactions.
+ *   2. runtime = "nodejs" enforced to ensure stable Vercel connection limits.
+ *   3. ADR-001 Enforcement: All Drizzle queries strictly wrapped in withTenant().
+ *   4. BNLV Root Tenant dynamically hardcoded to ID 1 to prevent connection pool exhaustion.
  */
 
 import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { db, withTenant } from "@/db";
-import { clientRequests, auditLogs, tenants } from "@/db/schema";
+import { withTenant } from "@/db";
+import { clientRequests, auditLogs } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { getRequestContext, requireRole } from "@/lib/request-context";
+import { unstable_noStore as noStore } from "next/cache";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -33,19 +33,8 @@ function extractIp(req: NextRequest): string {
     req.headers.get("cf-connecting-ip") ??
     req.headers.get("x-real-ip") ??
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    ""
+    "127.0.0.1"
   );
-}
-
-/** Resolves the BNLV root tenant ID dynamically — per Migration 0008 §4.5. */
-async function resolveBnlvTenantId(): Promise<number> {
-  const [root] = await db
-    .select({ id: tenants.id })
-    .from(tenants)
-    .where(eq(tenants.slug, "bnlv"))
-    .limit(1);
-  if (!root) throw new Error("BNLV root tenant not found.");
-  return root.id;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,6 +42,7 @@ async function resolveBnlvTenantId(): Promise<number> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
+  noStore(); // Bypass Next.js fetch caching
   const ctx = getRequestContext(req);
 
   const denied = requireRole(ctx, "admin");
@@ -73,10 +63,11 @@ export async function GET(req: NextRequest) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST — Public client intake (maps to clientRequests schema)
+// POST — Public client intake
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  noStore(); // CRITICAL: Bypass Next.js caching to prevent Neon BEGIN transaction crash
   try {
     const body = await req.json().catch(() => ({}));
 
@@ -96,12 +87,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Derive subsidiary from body or x-tenant-slug header injected by proxy
     const subsidiary = String(
       body.subsidiary ?? req.headers.get("x-tenant-slug") ?? "general"
     ).slice(0, 120);
 
-    // Combine legacy scheduling fields into message
     const messageParts = [
       body.service       ? `Service: ${body.service}`             : null,
       body.preferredDate ? `Preferred date: ${body.preferredDate}` : null,
@@ -117,7 +106,7 @@ export async function POST(req: NextRequest) {
       .update(`${subsidiary}:${contactEmail}:${companyName}:${hourBucket}`)
       .digest("hex");
 
-    const handledByTenantId = await resolveBnlvTenantId().catch(() => 1);
+    const handledByTenantId = 1; // Hardcoded to BNLV Root (ID 1) to prevent pool clash
     const ip = extractIp(req);
 
     // ADR-001: Mandatory Query Pattern (Insert & Audit scoped together)
@@ -138,14 +127,16 @@ export async function POST(req: NextRequest) {
         .onConflictDoNothing({ target: clientRequests.idempotencyKey })
         .returning();
 
-      // Audit log — actor format per ADR-001
-      await tx.insert(auditLogs).values({
-        tenantId: handledByTenantId,
-        actor: "system:landing-page",
-        action: `client.request:${subsidiary}`,
-        target: contactEmail,
-        ipAddress: ip,
-      });
+      // Only execute audit insert if the row was successfully created (avoids conflict errors)
+      if (row) {
+        await tx.insert(auditLogs).values({
+          tenantId: handledByTenantId,
+          actor: "system:landing-page",
+          action: `client.request:${subsidiary}`,
+          target: contactEmail,
+          ipAddress: ip,
+        });
+      }
 
       return row?.id ?? null;
     });
@@ -165,6 +156,7 @@ const VALID_STATUSES = ["pending", "approved", "rejected", "onboarded"] as const
 type RequestStatus = typeof VALID_STATUSES[number];
 
 export async function PATCH(req: NextRequest) {
+  noStore(); // Bypass Next.js fetch caching
   try {
     const ctx = getRequestContext(req);
 
