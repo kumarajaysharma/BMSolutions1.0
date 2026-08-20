@@ -24,6 +24,7 @@ const PUBLIC_PATHS = new Set([
   "/api/auth/logout",
   "/api/auth/session",
   "/api/health",
+  "/api/requests", // <-- ADDED: Allows public access to the intake form endpoint
   "/login",
   "/403",
   "/",
