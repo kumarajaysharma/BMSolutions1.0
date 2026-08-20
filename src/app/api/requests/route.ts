@@ -7,22 +7,19 @@
  * - PATCH: Protected by admin role — updates request status.
  *
  * FIXES applied:
- *   1. unstable_noStore() injected to prevent Next.js 16 from caching Neon HTTP transactions.
- *   2. runtime = "nodejs" enforced to ensure stable Vercel connection limits.
+ *   1. runtime = "edge" enforced to provide native WebSocket support for Neon transactions.
+ *   2. Node `crypto` replaced with `crypto.subtle` for Edge compatibility (ADR-001).
  *   3. ADR-001 Enforcement: All Drizzle queries strictly wrapped in withTenant().
- *   4. BNLV Root Tenant dynamically hardcoded to ID 1 to prevent connection pool exhaustion.
  */
 
-import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { withTenant } from "@/db";
 import { clientRequests, auditLogs } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { getRequestContext, requireRole } from "@/lib/request-context";
-import { unstable_noStore as noStore } from "next/cache";
 
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
+export const runtime = "edge"; // CRITICAL: Edge runtime resolves the Neon WebSocket crash
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -42,15 +39,13 @@ function extractIp(req: NextRequest): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
-  noStore(); // Bypass Next.js fetch caching
   const ctx = getRequestContext(req);
 
   const denied = requireRole(ctx, "admin");
   if (denied) return denied;
 
-  const tenantId = ctx.tenantId || 1; // Fallback to BNLV Root ID 1
+  const tenantId = ctx.tenantId || 1; 
 
-  // ADR-001: Mandatory Query Pattern
   const rows = await withTenant(tenantId, async (tx) => {
     return tx
       .select()
@@ -67,7 +62,6 @@ export async function GET(req: NextRequest) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  noStore(); // CRITICAL: Bypass Next.js caching to prevent Neon BEGIN transaction crash
   try {
     const body = await req.json().catch(() => ({}));
 
@@ -75,7 +69,6 @@ export async function POST(req: NextRequest) {
     const contactEmail = String(body.email   ?? body.contactEmail ?? "").trim().toLowerCase();
     const companyName  = String(body.company ?? body.companyName  ?? "").trim();
 
-    // Input validation
     if (
       !contactName  || contactName.length  > 120 ||
       !contactEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contactEmail) ||
@@ -100,13 +93,16 @@ export async function POST(req: NextRequest) {
     ].filter(Boolean);
     const message = messageParts.join(" | ").slice(0, 2000) || null;
 
-    // Deterministic idempotency key — per Developer Guideline 7.4
-    const hourBucket    = new Date().toISOString().slice(0, 13);
-    const idempotencyKey = createHash("sha256")
-      .update(`${subsidiary}:${contactEmail}:${companyName}:${hourBucket}`)
-      .digest("hex");
+    // Web Crypto API for Edge-compatible deterministic SHA-256
+    const hourBucket = new Date().toISOString().slice(0, 13);
+    const encoder = new TextEncoder();
+    const data = encoder.encode(`${subsidiary}:${contactEmail}:${companyName}:${hourBucket}`);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const idempotencyKey = Array.from(new Uint8Array(hashBuffer))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
 
-    const handledByTenantId = 1; // Hardcoded to BNLV Root (ID 1) to prevent pool clash
+    const handledByTenantId = 1; 
     const ip = extractIp(req);
 
     // ADR-001: Mandatory Query Pattern (Insert & Audit scoped together)
@@ -127,7 +123,6 @@ export async function POST(req: NextRequest) {
         .onConflictDoNothing({ target: clientRequests.idempotencyKey })
         .returning();
 
-      // Only execute audit insert if the row was successfully created (avoids conflict errors)
       if (row) {
         await tx.insert(auditLogs).values({
           tenantId: handledByTenantId,
@@ -156,7 +151,6 @@ const VALID_STATUSES = ["pending", "approved", "rejected", "onboarded"] as const
 type RequestStatus = typeof VALID_STATUSES[number];
 
 export async function PATCH(req: NextRequest) {
-  noStore(); // Bypass Next.js fetch caching
   try {
     const ctx = getRequestContext(req);
 
@@ -177,7 +171,6 @@ export async function PATCH(req: NextRequest) {
     const ip = extractIp(req);
     const actor = ctx.userId ? `user:${ctx.userId}` : "system:admin";
 
-    // ADR-001: Mandatory Query Pattern (Update & Audit scoped together)
     const row = await withTenant(tenantId, async (tx) => {
       const [updated] = await tx
         .update(clientRequests)
