@@ -7,20 +7,17 @@
  * - PATCH: Protected by admin role — updates request status.
  *
  * FIXES applied:
- *   1. POST .values() rewritten to match clientRequests schema columns.
- *      Removed: tenantId, name, email, company, service, preferredDate,
- *               preferredTime, notes (none exist on clientRequests).
- *      Added:   contactName, contactEmail, companyName, subsidiary,
- *               message, requestedPlan, idempotencyKey, handledByTenantId.
- *   2. PATCH status enum corrected to: pending | approved | rejected | onboarded.
- *   3. PATCH audit log: row.email → row.contactEmail.
- *   4. PATCH actor format updated to ADR-001 convention: user:{userId}.
- *   5. IP extraction order updated: cf-connecting-ip → x-real-ip → x-forwarded-for.
+ *   1. ADR-001 Enforcement: All Drizzle queries (GET, POST, PATCH) wrapped 
+ *      in mandatory withTenant() transaction scope to bypass FORCE RLS.
+ *   2. POST .values() rewritten to match clientRequests schema columns.
+ *   3. PATCH status enum corrected to: pending | approved | rejected | onboarded.
+ *   4. PATCH audit log: row.email → row.contactEmail.
+ *   5. PATCH actor format updated to ADR-001 convention: user:{userId}.
  */
 
-import { createHash, randomUUID } from "crypto";
+import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
+import { db, withTenant } from "@/db";
 import { clientRequests, auditLogs, tenants } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { getRequestContext, requireRole } from "@/lib/request-context";
@@ -61,11 +58,16 @@ export async function GET(req: NextRequest) {
   const denied = requireRole(ctx, "admin");
   if (denied) return denied;
 
-  const rows = await db
-    .select()
-    .from(clientRequests)
-    .orderBy(desc(clientRequests.id))
-    .limit(60);
+  const tenantId = ctx.tenantId || 1; // Fallback to BNLV Root ID 1
+
+  // ADR-001: Mandatory Query Pattern
+  const rows = await withTenant(tenantId, async (tx) => {
+    return tx
+      .select()
+      .from(clientRequests)
+      .orderBy(desc(clientRequests.id))
+      .limit(60);
+  });
 
   return NextResponse.json(rows);
 }
@@ -104,8 +106,8 @@ export async function POST(req: NextRequest) {
       body.service       ? `Service: ${body.service}`             : null,
       body.preferredDate ? `Preferred date: ${body.preferredDate}` : null,
       body.preferredTime ? `Preferred time: ${body.preferredTime}` : null,
-      body.notes         ? `Notes: ${body.notes}`                  : null,
-      body.message       ? body.message                            : null,
+      body.notes         ? `Notes: ${body.notes}`                 : null,
+      body.message       ? body.message                           : null,
     ].filter(Boolean);
     const message = messageParts.join(" | ").slice(0, 2000) || null;
 
@@ -115,35 +117,40 @@ export async function POST(req: NextRequest) {
       .update(`${subsidiary}:${contactEmail}:${companyName}:${hourBucket}`)
       .digest("hex");
 
-    const handledByTenantId = await resolveBnlvTenantId();
+    const handledByTenantId = await resolveBnlvTenantId().catch(() => 1);
     const ip = extractIp(req);
 
-    const [row] = await db
-      .insert(clientRequests)
-      .values({
-        idempotencyKey,
-        companyName,
-        contactName,
-        contactEmail,
-        subsidiary,
-        message,
-        requestedPlan:    "starter",
-        status:           "pending",
-        handledByTenantId,
-      })
-      .onConflictDoNothing({ target: clientRequests.idempotencyKey })
-      .returning();
+    // ADR-001: Mandatory Query Pattern (Insert & Audit scoped together)
+    const insertedId = await withTenant(handledByTenantId, async (tx) => {
+      const [row] = await tx
+        .insert(clientRequests)
+        .values({
+          idempotencyKey,
+          companyName,
+          contactName,
+          contactEmail,
+          subsidiary,
+          message,
+          requestedPlan: "starter",
+          status: "pending",
+          handledByTenantId,
+        })
+        .onConflictDoNothing({ target: clientRequests.idempotencyKey })
+        .returning();
 
-    // Audit log — actor format per ADR-001
-    await db.insert(auditLogs).values({
-      tenantId:  handledByTenantId,
-      actor:     "system:landing-page",
-      action:    `client.request:${subsidiary}`,
-      target:    contactEmail,
-      ipAddress: ip,
+      // Audit log — actor format per ADR-001
+      await tx.insert(auditLogs).values({
+        tenantId: handledByTenantId,
+        actor: "system:landing-page",
+        action: `client.request:${subsidiary}`,
+        target: contactEmail,
+        ipAddress: ip,
+      });
+
+      return row?.id ?? null;
     });
 
-    return NextResponse.json({ ok: true, id: row?.id ?? null }, { status: 201 });
+    return NextResponse.json({ ok: true, id: insertedId }, { status: 201 });
   } catch (error) {
     console.error("Client request submission error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -154,7 +161,6 @@ export async function POST(req: NextRequest) {
 // PATCH — Admin-protected status update
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Valid status values from requestStatusEnum — per schema.ts
 const VALID_STATUSES = ["pending", "approved", "rejected", "onboarded"] as const;
 type RequestStatus = typeof VALID_STATUSES[number];
 
@@ -174,30 +180,35 @@ export async function PATCH(req: NextRequest) {
       ? body.status
       : "pending";
 
-    const [row] = await db
-      .update(clientRequests)
-      .set({ status })
-      .where(eq(clientRequests.id, Number(body.id)))
-      .returning();
+    const tenantIdHeader = req.headers.get("x-tenant-id");
+    const tenantId: number = tenantIdHeader ? Number(tenantIdHeader) : 1;
+    const ip = extractIp(req);
+    const actor = ctx.userId ? `user:${ctx.userId}` : "system:admin";
+
+    // ADR-001: Mandatory Query Pattern (Update & Audit scoped together)
+    const row = await withTenant(tenantId, async (tx) => {
+      const [updated] = await tx
+        .update(clientRequests)
+        .set({ status })
+        .where(eq(clientRequests.id, Number(body.id)))
+        .returning();
+
+      if (updated) {
+        await tx.insert(auditLogs).values({
+          tenantId,
+          actor,
+          action: `client.request.${status}`,
+          target: updated.contactEmail,
+          ipAddress: ip,
+        });
+      }
+
+      return updated;
+    });
 
     if (!row) {
       return NextResponse.json({ error: "Request not found" }, { status: 404 });
     }
-
-    const tenantIdHeader = req.headers.get("x-tenant-id");
-    const tenantId: number = tenantIdHeader ? Number(tenantIdHeader) : 1;
-    const ip = extractIp(req);
-
-    // Actor format per ADR-001: user:{userId}
-    const actor = ctx.userId ? `user:${ctx.userId}` : "system:admin";
-
-    await db.insert(auditLogs).values({
-      tenantId,
-      actor,
-      action:    `client.request.${status}`,
-      target:    row.contactEmail,   // FIX: was row.email — column is contactEmail
-      ipAddress: ip,
-    });
 
     return NextResponse.json(row);
   } catch (error) {
