@@ -8,8 +8,7 @@
  *
  * FIXES applied:
  *   1. fetchCache = "force-no-store" to stop Next.js from hijacking Neon transactions.
- *   2. neonConfig.fetchCacheFunction patched to explicitly bypass queryWithCache.
- *   3. ADR-001 Enforcement: All Drizzle queries strictly wrapped in withTenant().
+ *   2. ADR-001 Enforcement: All Drizzle queries strictly wrapped in withTenant().
  */
 
 import { createHash } from "crypto";
@@ -24,12 +23,6 @@ export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store"; // CRITICAL: Disables Next.js fetch cache
 export const revalidate = 0;
 export const runtime = "nodejs";
-
-// CRITICAL: Force Neon to ignore Next.js fetch patches globally for this route
-import { neonConfig } from "@neondatabase/serverless";
-if (neonConfig) {
-  neonConfig.fetchCacheFunction = undefined;
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -113,7 +106,7 @@ export async function POST(req: NextRequest) {
     const handledByTenantId = 1; // Hardcoded to BNLV Root (ID 1)
     const ip = extractIp(req);
 
-    // ADR-001: Mandatory Query Pattern (Insert & Audit scoped together)[cite: 5]
+    // ADR-001: Mandatory Query Pattern (Insert & Audit scoped together)
     const insertedId = await withTenant(handledByTenantId, async (tx) => {
       const [row] = await tx
         .insert(clientRequests)
