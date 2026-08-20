@@ -24,7 +24,7 @@ const PUBLIC_PATHS = new Set([
   "/api/auth/logout",
   "/api/auth/session",
   "/api/health",
-  "/api/requests", // <-- ADDED: Allows public access to the intake form endpoint
+  "/api/requests", // Allows public access to the intake form endpoint
   "/login",
   "/403",
   "/",
@@ -99,7 +99,13 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
   const passThrough = () => NextResponse.next({ request: { headers: sanitisedHeaders } });
 
   const isApiRoute = pathname.startsWith("/api/");
-  const isNextAsset = pathname.startsWith("/_next/") || pathname.startsWith("/static/");
+  
+  // FIX: Whitelist Next.js assets, the /brand/ folder, and common static image extensions
+  const isNextAsset = 
+    pathname.startsWith("/_next/") || 
+    pathname.startsWith("/static/") || 
+    pathname.startsWith("/brand/") || 
+    Boolean(pathname.match(/\.(png|svg|jpe?g|webp|ico|webmanifest)$/i));
 
   // 4. Public Route Bypass
   if (isNextAsset || PUBLIC_PATHS.has(pathname)) {
