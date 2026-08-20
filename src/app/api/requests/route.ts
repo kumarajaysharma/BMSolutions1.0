@@ -7,19 +7,29 @@
  * - PATCH: Protected by admin role — updates request status.
  *
  * FIXES applied:
- *   1. runtime = "edge" enforced to provide native WebSocket support for Neon transactions.
- *   2. Node `crypto` replaced with `crypto.subtle` for Edge compatibility (ADR-001).
+ *   1. fetchCache = "force-no-store" to stop Next.js from hijacking Neon transactions.
+ *   2. neonConfig.fetchCacheFunction patched to explicitly bypass queryWithCache.
  *   3. ADR-001 Enforcement: All Drizzle queries strictly wrapped in withTenant().
  */
 
+import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { withTenant } from "@/db";
 import { clientRequests, auditLogs } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { getRequestContext, requireRole } from "@/lib/request-context";
 
+// --- NEXT.JS FETCH CACHE BYPASS FOR NEON HTTP TRANSACTIONS ---
 export const dynamic = "force-dynamic";
-export const runtime = "edge"; // CRITICAL: Edge runtime resolves the Neon WebSocket crash
+export const fetchCache = "force-no-store"; // CRITICAL: Disables Next.js fetch cache
+export const revalidate = 0;
+export const runtime = "nodejs";
+
+// CRITICAL: Force Neon to ignore Next.js fetch patches globally for this route
+import { neonConfig } from "@neondatabase/serverless";
+if (neonConfig) {
+  neonConfig.fetchCacheFunction = undefined;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -46,6 +56,7 @@ export async function GET(req: NextRequest) {
 
   const tenantId = ctx.tenantId || 1; 
 
+  // ADR-001: Mandatory Query Pattern
   const rows = await withTenant(tenantId, async (tx) => {
     return tx
       .select()
@@ -93,19 +104,16 @@ export async function POST(req: NextRequest) {
     ].filter(Boolean);
     const message = messageParts.join(" | ").slice(0, 2000) || null;
 
-    // Web Crypto API for Edge-compatible deterministic SHA-256
-    const hourBucket = new Date().toISOString().slice(0, 13);
-    const encoder = new TextEncoder();
-    const data = encoder.encode(`${subsidiary}:${contactEmail}:${companyName}:${hourBucket}`);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    const idempotencyKey = Array.from(new Uint8Array(hashBuffer))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+    // Deterministic idempotency key — per Developer Guideline 7.4
+    const hourBucket    = new Date().toISOString().slice(0, 13);
+    const idempotencyKey = createHash("sha256")
+      .update(`${subsidiary}:${contactEmail}:${companyName}:${hourBucket}`)
+      .digest("hex");
 
-    const handledByTenantId = 1; 
+    const handledByTenantId = 1; // Hardcoded to BNLV Root (ID 1)
     const ip = extractIp(req);
 
-    // ADR-001: Mandatory Query Pattern (Insert & Audit scoped together)
+    // ADR-001: Mandatory Query Pattern (Insert & Audit scoped together)[cite: 5]
     const insertedId = await withTenant(handledByTenantId, async (tx) => {
       const [row] = await tx
         .insert(clientRequests)
