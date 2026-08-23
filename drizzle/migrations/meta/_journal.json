@@ -64,6 +64,20 @@
       "when": 1786382072565,
       "tag": "0008_commercial_launch_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786382075000,
+      "tag": "0009_schema_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787500000000,
+      "tag": "0010_force_rls_revoke_truncate_limsy",
+      "breakpoints": true
     }
   ]
 }
