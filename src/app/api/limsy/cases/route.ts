@@ -14,9 +14,13 @@
  * SECURITY REMEDIATION (2026-07-27):
  *   - Updated IP extraction to prioritize Cloudflare's authoritative `cf-connecting-ip` header.
  *   - Added explicit `tenantId` match predicate to the PATCH query `WHERE` clause for defense-in-depth RLS separation.
+ * 
+ * BLOCKER REMEDIATION (Current):
+ *   - CR-002: Fixed auditLogs actor string format to enforce `user:${ctx.userId}` in POST and PATCH.
+ *   - CR-003: Implemented role-gated column projection in GET to restrict sensitive party data.
  *
  * RBAC:
- *   - GET  → "developer"  (read docket list; no sensitive operative text exposed here)
+ *   - GET  → "developer"  (read docket list; sensitive operative text gated to architect+)
  *   - POST → "architect"  (case intake is a privileged legal action)
  *   - PATCH→ "architect"  (status mutation on a legal record)
  */
@@ -45,8 +49,34 @@ export async function GET(req: NextRequest) {
     const denied = requireRole(ctx, "developer");
     if (denied) return denied;
 
+    // CR-003: Party-identifying and operative fields restricted to architect+
+    const fullAccess = ["owner", "admin", "architect"].includes(ctx.userRole ?? "");
+
     const data = await withTenant(ctx.tenantId, async (tx) => {
-      return tx.select().from(limsyCases).orderBy(asc(limsyCases.id));
+      if (fullAccess) {
+        return tx.select().from(limsyCases).orderBy(asc(limsyCases.id));
+      }
+      
+      // Developer/designer/viewer: docket metadata only
+      return tx.select({
+        id:              limsyCases.id,
+        tenantId:        limsyCases.tenantId,
+        caseNumber:      limsyCases.caseNumber,
+        internalRef:     limsyCases.internalRef,
+        courtLevel:      limsyCases.courtLevel,
+        courtName:       limsyCases.courtName,
+        courtLocation:   limsyCases.courtLocation,
+        caseType:        limsyCases.caseType,
+        status:          limsyCases.status,
+        filingDate:      limsyCases.filingDate,
+        admissionDate:   limsyCases.admissionDate,
+        nextHearingDate: limsyCases.nextHearingDate,
+        urgencyFlag:     limsyCases.urgencyFlag,
+        priorityLevel:   limsyCases.priorityLevel,
+        parentCaseId:    limsyCases.parentCaseId,
+        createdAt:       limsyCases.createdAt,
+        updatedAt:       limsyCases.updatedAt,
+      }).from(limsyCases).orderBy(asc(limsyCases.id));
     });
 
     return NextResponse.json(data);
@@ -127,7 +157,9 @@ export async function POST(req: NextRequest) {
       req.headers.get("cf-connecting-ip") ??
       req.headers.get("x-real-ip") ??
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-      "";
+      "127.0.0.1";
+
+    const actor = `user:${ctx.userId}`; // CR-002
 
     const row = await withTenant(ctx.tenantId, async (tx) => {
       const [inserted] = await tx
@@ -172,7 +204,7 @@ export async function POST(req: NextRequest) {
 
       await tx.insert(auditLogs).values({
         tenantId: ctx.tenantId,
-        actor: String(ctx.userId),
+        actor, // CR-002
         action: `limsy.case.file:${inserted.caseType}`,
         target: inserted.internalRef,
         severity: "warn",
@@ -204,10 +236,10 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Case ID is required." }, { status: 400 });
     }
 
-    // Defect 4 Fix: Strict Drizzle-inferred type — no `as any` cast
+    // Strict Drizzle-inferred type — no `as any` cast
     const patch: Partial<typeof limsyCases.$inferInsert> = {};
 
-    // Defect 3 Fix: Enum validation before entering the transaction
+    // Enum validation before entering the transaction
     if (body.status !== undefined) {
       const trimmedStatus = String(body.status).trim();
       if (
@@ -225,10 +257,8 @@ export async function PATCH(req: NextRequest) {
       patch.status = trimmedStatus as (typeof VALID_LIMSY_CASE_STATUSES)[number];
     }
 
-    // Note: benchCoram is intentionally absent here.
-    // Coram mutations belong in POST /api/limsy/bench-assignments — see limsy_bench_assignments.
     if (body.nextHearingDate !== undefined) {
-      patch.nextHearingDate = new Date(body.nextHearingDate);
+      patch.nextHearingDate = body.nextHearingDate ? new Date(body.nextHearingDate) : null;
     }
 
     if (body.urgencyFlag !== undefined) {
@@ -261,12 +291,14 @@ export async function PATCH(req: NextRequest) {
       req.headers.get("cf-connecting-ip") ??
       req.headers.get("x-real-ip") ??
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-      "";
+      "127.0.0.1";
+
+    const actor = `user:${ctx.userId}`; // CR-002
 
     const row = await withTenant(ctx.tenantId, async (tx) => {
       const [updated] = await tx
         .update(limsyCases)
-        .set(patch) // TypeScript satisfied — Partial<$inferInsert> is the correct update type
+        .set(patch)
         .where(
           and(
             eq(limsyCases.id, Number(body.id)),
@@ -278,7 +310,7 @@ export async function PATCH(req: NextRequest) {
       if (updated) {
         await tx.insert(auditLogs).values({
           tenantId: ctx.tenantId,
-          actor: String(ctx.userId),
+          actor, // CR-002
           action: `limsy.case.update:${updated.caseNumber ?? updated.internalRef}`,
           target: String(updated.id),
           severity: "warn",
