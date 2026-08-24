@@ -12,6 +12,9 @@
  * SECURITY REMEDIATION (2026-07-27):
  *   - Updated IP extraction to prioritize Cloudflare's authoritative `cf-connecting-ip` header.
  *   - Added a PATCH handler with explicit `tenantId` match predicates in the query `WHERE` clause for defense-in-depth isolation.
+ * BLOCKER REMEDIATION:
+ *   - CR-001: Removed client-writable adjournmentCount. Now uses SQL database-side increment on 'adjourned' status.
+ *   - CR-002: Fixed auditLogs actor string format to enforce `user:${ctx.userId}`.
  *
  * RBAC:
  *   - GET   → "architect"  (protects sensitive pre-published data like proceedings_summary)
@@ -22,7 +25,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withTenant } from "@/db";
 import { limsyHearings, auditLogs, VALID_LIMSY_HEARING_STATUSES } from "@/db/schema";
-import { asc, eq, and } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
+import { asc, eq, and, sql } from "drizzle-orm";
 import { getRequestContext, requireRole } from "@/lib/request-context";
 
 export const dynamic = "force-dynamic";
@@ -107,7 +111,9 @@ export async function POST(req: NextRequest) {
       req.headers.get("cf-connecting-ip") ??
       req.headers.get("x-real-ip") ??
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-      "";
+      "127.0.0.1";
+
+    const actor = `user:${ctx.userId}`; // CR-002: Hardened Actor format
 
     const row = await withTenant(ctx.tenantId, async (tx) => {
       const [inserted] = await tx
@@ -132,7 +138,7 @@ export async function POST(req: NextRequest) {
 
       await tx.insert(auditLogs).values({
         tenantId: ctx.tenantId,
-        actor: String(ctx.userId),
+        actor, // CR-002
         action: `limsy.hearing.schedule:${inserted.hearingNumber}`,
         target: `case:${inserted.caseId}`,
         severity: "warn",
@@ -153,6 +159,10 @@ export async function POST(req: NextRequest) {
 // PATCH — Update hearing status, actual date, or adjournment count
 // ─────────────────────────────────────────────────────────────────────────────
 
+type HearingPatch = Partial<typeof limsyHearings.$inferInsert> & {
+  adjournmentCount?: number | SQL;
+};
+
 export async function PATCH(req: NextRequest) {
   try {
     const ctx = getRequestContext(req);
@@ -164,7 +174,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Hearing ID is required." }, { status: 400 });
     }
 
-    const patch: Partial<typeof limsyHearings.$inferInsert> = {};
+    const patch: HearingPatch = {};
 
     if (body.status !== undefined) {
       const trimmedStatus = String(body.status).trim();
@@ -181,22 +191,30 @@ export async function PATCH(req: NextRequest) {
         );
       }
       patch.status = trimmedStatus as (typeof VALID_LIMSY_HEARING_STATUSES)[number];
+
+      // CR-001: Safely increment adjournment count on db side ONLY when status transitions to adjourned
+      if (patch.status === "adjourned") {
+        patch.adjournmentCount = sql`${limsyHearings.adjournmentCount} + 1`;
+        
+        if (body.adjournmentReason !== undefined) {
+          patch.adjournmentReason = String(body.adjournmentReason).trim();
+        }
+        if (body.adjournedBy !== undefined) {
+          patch.adjournedBy = String(body.adjournedBy).trim();
+        }
+      }
     }
 
     if (body.actualDate !== undefined) {
-      const actualDate = new Date(body.actualDate);
-      if (isNaN(actualDate.getTime())) {
-        return NextResponse.json({ error: "Invalid actualDate format." }, { status: 400 });
+      if (body.actualDate === null) {
+        patch.actualDate = null;
+      } else {
+        const actualDate = new Date(body.actualDate);
+        if (isNaN(actualDate.getTime())) {
+          return NextResponse.json({ error: "Invalid actualDate format." }, { status: 400 });
+        }
+        patch.actualDate = actualDate;
       }
-      patch.actualDate = actualDate;
-    }
-
-    if (body.adjournmentCount !== undefined) {
-      const count = Number(body.adjournmentCount);
-      if (isNaN(count) || count < 0) {
-        return NextResponse.json({ error: "adjournmentCount must be a non-negative integer." }, { status: 400 });
-      }
-      patch.adjournmentCount = count;
     }
 
     if (Object.keys(patch).length === 0) {
@@ -213,7 +231,9 @@ export async function PATCH(req: NextRequest) {
       req.headers.get("cf-connecting-ip") ??
       req.headers.get("x-real-ip") ??
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-      "";
+      "127.0.0.1";
+      
+    const actor = `user:${ctx.userId}`; // CR-002: Hardened Actor format
 
     const row = await withTenant(ctx.tenantId, async (tx) => {
       const [updated] = await tx
@@ -230,7 +250,7 @@ export async function PATCH(req: NextRequest) {
       if (updated) {
         await tx.insert(auditLogs).values({
           tenantId: ctx.tenantId,
-          actor: String(ctx.userId),
+          actor, // CR-002
           action: `limsy.hearing.update:${updated.hearingNumber}`,
           target: String(updated.id),
           severity: "warn",
