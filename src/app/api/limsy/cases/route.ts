@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
     if (denied) return denied;
 
     // CR-003: Party-identifying and operative fields restricted to architect+
-    const fullAccess = ["owner", "admin", "architect"].includes(ctx.userRole ?? "");
+    const fullAccess = ["owner", "admin", "architect"].includes(ctx.role ?? "");
 
     const data = await withTenant(ctx.tenantId, async (tx) => {
       if (fullAccess) {

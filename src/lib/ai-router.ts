@@ -5,7 +5,7 @@
 // The router classifies each task, scores complexity, and dispatches
 // an agentic pipeline: Plan → Generate → Verify → Security Gate → Commit.
 
-import { lintSnippet, type Finding } from "./security-linter";
+import { lintSnippet, type SecurityFinding } from "./security-linter";
 
 export type RoutedModel = "claude-fable-5" | "gemini-3.5-flash";
 export type TaskClass = "planning" | "backend" | "frontend" | "styling";
@@ -129,8 +129,8 @@ export function runPipeline(prompt: string): {
   complexityScore: number;
   stages: Stage[];
   output: string;
-  securityStatus: "pass" | "warn" | "fail";
-  securityFindings: Finding[];
+  securityStatus: "pending" | "pass" | "warn" | "fail";
+  securityFindings: SecurityFinding[];
   status: "committed" | "blocked";
 } {
   const routing = classifyTask(prompt);
@@ -172,7 +172,7 @@ export function runPipeline(prompt: string): {
     detail:
       lint.status === "pass"
         ? "0 findings across 9 policy rules. Snippet cleared for commit."
-        : `${lint.findings.length} finding(s): ${lint.findings.map((f) => f.rule).join(", ")}.`,
+        : `${lint.findings.length} finding(s): ${lint.findings.map((f) => f.ruleId).join(", ")}.`,
   });
 
   const blocked = lint.status === "fail";
