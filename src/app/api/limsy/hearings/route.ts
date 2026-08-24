@@ -25,8 +25,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withTenant } from "@/db";
 import { limsyHearings, auditLogs, VALID_LIMSY_HEARING_STATUSES } from "@/db/schema";
-import type { SQL } from "drizzle-orm";
-import { asc, eq, and, sql } from "drizzle-orm";
+import { asc, eq, and, sql, type SQL } from "drizzle-orm";
 import { getRequestContext, requireRole } from "@/lib/request-context";
 
 export const dynamic = "force-dynamic";
@@ -159,8 +158,8 @@ export async function POST(req: NextRequest) {
 // PATCH — Update hearing status, actual date, or adjournment count
 // ─────────────────────────────────────────────────────────────────────────────
 
-type HearingPatch = Partial<typeof limsyHearings.$inferInsert> & {
-  adjournmentCount?: number | SQL;
+type HearingPatch = Omit<Partial<typeof limsyHearings.$inferInsert>, 'adjournmentCount'> & {
+  adjournmentCount?: number | SQL<unknown>;
 };
 
 export async function PATCH(req: NextRequest) {
