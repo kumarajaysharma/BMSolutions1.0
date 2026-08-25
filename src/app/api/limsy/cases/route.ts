@@ -18,6 +18,7 @@
  * BLOCKER REMEDIATION (Current):
  *   - CR-002: Fixed auditLogs actor string format to enforce `user:${ctx.userId}` in POST and PATCH.
  *   - CR-003: Implemented role-gated column projection in GET to restrict sensitive party data.
+ *   - CR-004: Catch Postgres unique constraint violations (code 23505) for duplicate internalRef to prevent 500 errors.
  *
  * RBAC:
  *   - GET  → "developer"  (read docket list; sensitive operative text gated to architect+)
@@ -80,7 +81,7 @@ export async function GET(req: NextRequest) {
     });
 
     return NextResponse.json(data);
-  } catch (error) {
+  } catch (error: unknown) { // Applied strict TS typing
     console.error("[LIMSY] cases GET error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -215,8 +216,24 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json(row, { status: 201 });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("[LIMSY] case POST error:", error);
+
+    // CR-004: Type-safe check for Postgres database unique constraint errors
+    if (typeof error === 'object' && error !== null && 'code' in error) {
+      const dbError = error as { code: string; detail?: string };
+
+      if (dbError.code === '23505') {
+        return NextResponse.json(
+          { 
+            error: "A case with this internal reference already exists.",
+            detail: dbError.detail 
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -326,8 +343,23 @@ export async function PATCH(req: NextRequest) {
     }
 
     return NextResponse.json(row);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("[LIMSY] case PATCH error:", error);
+    
+    // Catch edge-case unique constraint violations on PATCH (if you later allow patching unique fields)
+    if (typeof error === 'object' && error !== null && 'code' in error) {
+      const dbError = error as { code: string; detail?: string };
+      if (dbError.code === '23505') {
+        return NextResponse.json(
+          { 
+            error: "Update failed: Record with this unique identifier already exists.",
+            detail: dbError.detail 
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

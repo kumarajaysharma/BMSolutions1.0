@@ -29,3 +29,4 @@ Thumbs.db
 .vercel
 .env*
 next-env.d.ts 
+.env.local.admin 
