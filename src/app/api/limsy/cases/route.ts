@@ -219,19 +219,22 @@ export async function POST(req: NextRequest) {
   } catch (error: unknown) {
     console.error("[LIMSY] case POST error:", error);
 
-    // CR-004: Type-safe check for Postgres database unique constraint errors
-    if (typeof error === 'object' && error !== null && 'code' in error) {
-      const dbError = error as { code: string; detail?: string };
+    // CR-004: Bulletproof check for Neon/Postgres unique constraint errors
+    const errObj = error as Record<string, any>;
+    const errString = String(error).toLowerCase();
 
-      if (dbError.code === '23505') {
-        return NextResponse.json(
-          { 
-            error: "A case with this internal reference already exists.",
-            detail: dbError.detail 
-          },
-          { status: 409 }
-        );
-      }
+    if (
+      errObj?.code === '23505' || 
+      errString.includes('23505') || 
+      errString.includes('duplicate key value violates unique constraint')
+    ) {
+      return NextResponse.json(
+        { 
+          error: "A case with this internal reference already exists.",
+          detail: errObj?.detail || "Unique constraint violation"
+        },
+        { status: 409 }
+      );
     }
 
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -346,18 +349,22 @@ export async function PATCH(req: NextRequest) {
   } catch (error: unknown) {
     console.error("[LIMSY] case PATCH error:", error);
     
-    // Catch edge-case unique constraint violations on PATCH (if you later allow patching unique fields)
-    if (typeof error === 'object' && error !== null && 'code' in error) {
-      const dbError = error as { code: string; detail?: string };
-      if (dbError.code === '23505') {
-        return NextResponse.json(
-          { 
-            error: "Update failed: Record with this unique identifier already exists.",
-            detail: dbError.detail 
-          },
-          { status: 409 }
-        );
-      }
+    // Catch edge-case unique constraint violations on PATCH 
+    const errObj = error as Record<string, any>;
+    const errString = String(error).toLowerCase();
+
+    if (
+      errObj?.code === '23505' || 
+      errString.includes('23505') || 
+      errString.includes('duplicate key value violates unique constraint')
+    ) {
+      return NextResponse.json(
+        { 
+          error: "Update failed: Record with this unique identifier already exists.",
+          detail: errObj?.detail || "Unique constraint violation"
+        },
+        { status: 409 }
+      );
     }
 
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
