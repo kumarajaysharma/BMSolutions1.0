@@ -14,6 +14,8 @@
  *   - Updated IP extraction to prioritize Cloudflare's authoritative `cf-connecting-ip` header.
  *   - Normalized `caseId` in the cryptographic canonical string calculation to prevent hash variance.
  *   - Added an explicit `tenantId` match predicate to any future mutation/lookup paths for defense-in-depth RLS separation.
+ * BLOCKER REMEDIATION:
+ *   - CR-002: Fixed auditLogs actor string format to enforce `user:${ctx.userId}`.
  *
  * RBAC:
  *   - GET  → "architect"  (cryptographic operative text — elevated from developer)
@@ -109,7 +111,9 @@ export async function POST(req: NextRequest) {
       req.headers.get("cf-connecting-ip") ??
       req.headers.get("x-real-ip") ??
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-      "";
+      "127.0.0.1";
+      
+    const actor = `user:${ctx.userId}`; // CR-002: Hardened Actor format
 
     const row = await withTenant(ctx.tenantId, async (tx) => {
       const [inserted] = await tx
@@ -150,7 +154,7 @@ export async function POST(req: NextRequest) {
       // Audit log severity is "critical" for immutable legal record creation
       await tx.insert(auditLogs).values({
         tenantId: ctx.tenantId,
-        actor: String(ctx.userId),
+        actor, // CR-002
         action: `limsy.order.record:${inserted.orderType}`,
         target: inserted.cryptoHash ?? inserted.id.toString(),
         severity: "critical",

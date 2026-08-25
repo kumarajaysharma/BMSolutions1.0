@@ -9,12 +9,13 @@
  * FIXES applied:
  *   1. fetchCache = "force-no-store" to stop Next.js from hijacking Neon transactions.
  *   2. ADR-001 Enforcement: All Drizzle queries strictly wrapped in withTenant().
+ *   3. Dynamic RLS Lead Routing: Resolved hardcoded handledByTenantId bug via slug lookup.
  */
 
 import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { withTenant } from "@/db";
-import { clientRequests, auditLogs } from "@/db/schema";
+import { clientRequests, auditLogs, tenants } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { getRequestContext, requireRole } from "@/lib/request-context";
 
@@ -103,8 +104,19 @@ export async function POST(req: NextRequest) {
       .update(`${subsidiary}:${contactEmail}:${companyName}:${hourBucket}`)
       .digest("hex");
 
-    const handledByTenantId = 1; // Hardcoded to BNLV Root (ID 1)
     const ip = extractIp(req);
+
+    // DYNAMIC LEAD ROUTING: Lookup the target tenant ID based on the subsidiary slug
+    const [targetTenant] = await withTenant(1, async (tx) => {
+      return tx
+        .select({ id: tenants.id })
+        .from(tenants)
+        .where(eq(tenants.slug, subsidiary))
+        .limit(1);
+    });
+
+    // Fallback to BNLV Root (ID 1) if the requested subsidiary slug doesn't exist
+    const handledByTenantId = targetTenant?.id ?? 1;
 
     // ADR-001: Mandatory Query Pattern (Insert & Audit scoped together)
     const insertedId = await withTenant(handledByTenantId, async (tx) => {
@@ -167,8 +179,8 @@ export async function PATCH(req: NextRequest) {
       ? body.status
       : "pending";
 
-    const tenantIdHeader = req.headers.get("x-tenant-id");
-    const tenantId: number = tenantIdHeader ? Number(tenantIdHeader) : 1;
+    // Standardize tenant context extraction across the module
+    const tenantId = ctx.tenantId || 1;
     const ip = extractIp(req);
     const actor = ctx.userId ? `user:${ctx.userId}` : "system:admin";
 

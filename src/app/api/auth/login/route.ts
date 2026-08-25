@@ -91,7 +91,7 @@ export async function POST(request: Request) {
       id: sessionId,
       userId: user.id,
       tenantId: tenant.id,
-      tokenHash: sessionId, 
+      tokenHash: crypto.createHash('sha256').update(sessionId).digest('hex'), 
       expiresAt: expiresAt,
     });
 
