@@ -24,26 +24,39 @@ export function withErrorHandler(handler: RouteHandler): RouteHandler {
     } catch (error: unknown) {
       console.error(`[API Error] ${req.method} ${req.url}:`, error);
 
-      // 1. Type-safe check for Postgres database errors using the type guard
-      if (isPgError(error)) {
-        // Catch Postgres Unique Constraint Violations (e.g., duplicate internalRef)
-        if (error.code === '23505') {
-          return NextResponse.json(
-            { error: "A record with this unique identifier already exists.", detail: error.detail },
-            { status: 409 } // 409 Conflict
-          );
-        }
+      // Safely extract a string representation of the error, even if it's deeply nested
+      const errMessage = error instanceof Error ? error.message : String(error);
+      const errStringLower = errMessage.toLowerCase();
 
-        // Catch Postgres Foreign Key Violations (e.g., referencing a caseId that doesn't exist)
-        if (error.code === '23503') {
-          return NextResponse.json(
-            { error: "Referenced record does not exist.", detail: error.detail },
-            { status: 400 }
-          );
-        }
+      // 1. Catch Postgres Unique Constraint Violations (Duplicate Records)
+      const isDuplicate = 
+        (isPgError(error) && error.code === '23505') || 
+        errStringLower.includes('23505') ||
+        errStringLower.includes('duplicate key value violates unique constraint');
+
+      if (isDuplicate) {
+        const detail = isPgError(error) ? error.detail : "Unique constraint violation";
+        return NextResponse.json(
+          { error: "A record with this unique identifier already exists.", detail },
+          { status: 409 }
+        );
       }
 
-      // 2. Catch Zod Validation Errors
+      // 2. Catch Postgres Foreign Key Violations
+      const isForeignKey = 
+        (isPgError(error) && error.code === '23503') || 
+        errStringLower.includes('23503') ||
+        errStringLower.includes('violates foreign key constraint');
+
+      if (isForeignKey) {
+        const detail = isPgError(error) ? error.detail : "Foreign key constraint violation";
+        return NextResponse.json(
+          { error: "Referenced record does not exist.", detail },
+          { status: 400 }
+        );
+      }
+
+      // 3. Catch Zod Validation Errors
       if (error instanceof ZodError) {
         return NextResponse.json(
           { error: "Validation failed", issues: error.issues },
@@ -51,9 +64,13 @@ export function withErrorHandler(handler: RouteHandler): RouteHandler {
         );
       }
 
-      // 3. Fallback for unhandled errors
+      // 4. Fallback for unhandled errors - WITH DIAGNOSTICS EXPOSED
       return NextResponse.json(
-        { error: "Internal server error" },
+        { 
+          error: "Internal server error",
+          debug_message: errMessage,
+          debug_keys: typeof error === 'object' && error !== null ? Object.keys(error) : []
+        },
         { status: 500 }
       );
     }
