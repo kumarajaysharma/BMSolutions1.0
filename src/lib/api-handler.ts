@@ -2,11 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
 
 /**
- * Type guard for Postgres database errors.
- * Safely narrows the unknown error object for strict TypeScript analysis.
+ * Extracts Postgres error details even if wrapped by Drizzle/Neon in a `cause` property.
  */
-export function isPgError(e: unknown): e is { code: string; detail?: string } {
-  return typeof e === 'object' && e !== null && 'code' in e;
+export function getPgError(e: unknown): { code: string; detail?: string } | null {
+  if (typeof e !== 'object' || e === null) return null;
+  
+  // 1. Check if it's a direct Postgres/Neon error
+  if ('code' in e && typeof (e as any).code === 'string') {
+    return e as { code: string; detail?: string };
+  }
+  
+  // 2. Check if Drizzle wrapped the real error inside a 'cause' property
+  if ('cause' in e && typeof (e as any).cause === 'object' && (e as any).cause !== null) {
+    const cause = (e as any).cause;
+    if ('code' in cause && typeof cause.code === 'string') {
+      return cause as { code: string; detail?: string };
+    }
+  }
+  
+  return null;
 }
 
 // Define the standard Next.js route handler signature using NextRequest
@@ -24,34 +38,21 @@ export function withErrorHandler(handler: RouteHandler): RouteHandler {
     } catch (error: unknown) {
       console.error(`[API Error] ${req.method} ${req.url}:`, error);
 
-      // Safely extract a string representation of the error, even if it's deeply nested
-      const errMessage = error instanceof Error ? error.message : String(error);
-      const errStringLower = errMessage.toLowerCase();
+      // Unwrap the error safely
+      const pgError = getPgError(error);
 
       // 1. Catch Postgres Unique Constraint Violations (Duplicate Records)
-      const isDuplicate = 
-        (isPgError(error) && error.code === '23505') || 
-        errStringLower.includes('23505') ||
-        errStringLower.includes('duplicate key value violates unique constraint');
-
-      if (isDuplicate) {
-        const detail = isPgError(error) ? error.detail : "Unique constraint violation";
+      if (pgError?.code === '23505') {
         return NextResponse.json(
-          { error: "A record with this unique identifier already exists.", detail },
+          { error: "A record with this unique identifier already exists.", detail: pgError.detail || "Unique constraint violation" },
           { status: 409 }
         );
       }
 
       // 2. Catch Postgres Foreign Key Violations
-      const isForeignKey = 
-        (isPgError(error) && error.code === '23503') || 
-        errStringLower.includes('23503') ||
-        errStringLower.includes('violates foreign key constraint');
-
-      if (isForeignKey) {
-        const detail = isPgError(error) ? error.detail : "Foreign key constraint violation";
+      if (pgError?.code === '23503') {
         return NextResponse.json(
-          { error: "Referenced record does not exist.", detail },
+          { error: "Referenced record does not exist.", detail: pgError.detail || "Foreign key constraint violation" },
           { status: 400 }
         );
       }
@@ -64,13 +65,9 @@ export function withErrorHandler(handler: RouteHandler): RouteHandler {
         );
       }
 
-      // 4. Fallback for unhandled errors - WITH DIAGNOSTICS EXPOSED
+      // 4. Fallback for unhandled errors
       return NextResponse.json(
-        { 
-          error: "Internal server error",
-          debug_message: errMessage,
-          debug_keys: typeof error === 'object' && error !== null ? Object.keys(error) : []
-        },
+        { error: "Internal server error" },
         { status: 500 }
       );
     }
