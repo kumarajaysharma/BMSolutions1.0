@@ -30,3 +30,10 @@ Thumbs.db
 .env*
 next-env.d.ts 
 .env.local.admin 
+bnlv-enterprise-context.md 
+tsc-*.txt 
+*.bat.bat 
+*.ps1.ps1 
+*.ps1.txt 
+*.mjs.bak 
+.env.local.admin 
