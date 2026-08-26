@@ -23,6 +23,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { withErrorHandler } from "@/lib/api-handler";
 import { withTenant } from "@/db";
 import { limsyHearings, auditLogs, VALID_LIMSY_HEARING_STATUSES } from "@/db/schema";
 import { asc, eq, and, sql, type SQL } from "drizzle-orm";
@@ -34,124 +35,114 @@ export const dynamic = "force-dynamic";
 // GET — Retrieve tenant-scoped hearing cause-list
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function GET(req: NextRequest) {
-  try {
-    const ctx = getRequestContext(req);
-    // Elevated to "architect" to protect detailed minutes and proceedings summaries
-    const denied = requireRole(ctx, "architect");
-    if (denied) return denied;
+async function _GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  // Elevated to "architect" to protect detailed minutes and proceedings summaries
+  const denied = requireRole(ctx, "architect");
+  if (denied) return denied;
 
-    const data = await withTenant(ctx.tenantId, async (tx) => {
-      return tx.select().from(limsyHearings).orderBy(asc(limsyHearings.id));
-    });
+  const data = await withTenant(ctx.tenantId, async (tx) => {
+    return tx.select().from(limsyHearings).orderBy(asc(limsyHearings.id));
+  });
 
-    return NextResponse.json(data);
-  } catch (error) {
-    console.error("[LIMSY] hearings GET error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+  return NextResponse.json(data);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST — Schedule a new cause-list hearing
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function POST(req: NextRequest) {
-  try {
-    const ctx = getRequestContext(req);
-    const denied = requireRole(ctx, "architect");
-    if (denied) return denied;
+async function _POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const denied = requireRole(ctx, "architect");
+  if (denied) return denied;
 
-    const body = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => ({}));
 
-    // Required field validation — matches NOT NULL constraints in 0003_limsys_workflow.sql
-    if (!body.caseId || !body.scheduledDate || body.hearingNumber === undefined) {
+  // Required field validation — matches NOT NULL constraints in 0003_limsys_workflow.sql
+  if (!body.caseId || !body.scheduledDate || body.hearingNumber === undefined) {
+    return NextResponse.json(
+      {
+        error: "Required fields: caseId, scheduledDate, hearingNumber.",
+      },
+      { status: 400 }
+    );
+  }
+
+  const hearingNumber = Number(body.hearingNumber);
+  if (isNaN(hearingNumber) || hearingNumber < 1) {
+    return NextResponse.json(
+      { error: "hearingNumber must be a positive integer." },
+      { status: 400 }
+    );
+  }
+
+  const scheduledDate = new Date(body.scheduledDate);
+  if (isNaN(scheduledDate.getTime())) {
+    return NextResponse.json({ error: "Invalid scheduledDate format." }, { status: 400 });
+  }
+
+  // Enum validation on optional status override
+  let status: (typeof VALID_LIMSY_HEARING_STATUSES)[number] = "scheduled";
+  if (body.status !== undefined) {
+    const trimmedStatus = String(body.status).trim();
+    if (
+      !VALID_LIMSY_HEARING_STATUSES.includes(
+        trimmedStatus as (typeof VALID_LIMSY_HEARING_STATUSES)[number]
+      )
+    ) {
       return NextResponse.json(
         {
-          error: "Required fields: caseId, scheduledDate, hearingNumber.",
+          error: `Invalid status. Must be one of: ${VALID_LIMSY_HEARING_STATUSES.join(", ")}`,
         },
         { status: 400 }
       );
     }
+    status = trimmedStatus as (typeof VALID_LIMSY_HEARING_STATUSES)[number];
+  }
 
-    const hearingNumber = Number(body.hearingNumber);
-    if (isNaN(hearingNumber) || hearingNumber < 1) {
-      return NextResponse.json(
-        { error: "hearingNumber must be a positive integer." },
-        { status: 400 }
-      );
-    }
+  const ip =
+    req.headers.get("cf-connecting-ip") ??
+    req.headers.get("x-real-ip") ??
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    "127.0.0.1";
 
-    const scheduledDate = new Date(body.scheduledDate);
-    if (isNaN(scheduledDate.getTime())) {
-      return NextResponse.json({ error: "Invalid scheduledDate format." }, { status: 400 });
-    }
+  const actor = `user:${ctx.userId}`; // CR-002: Hardened Actor format
 
-    // Enum validation on optional status override
-    let status: (typeof VALID_LIMSY_HEARING_STATUSES)[number] = "scheduled";
-    if (body.status !== undefined) {
-      const trimmedStatus = String(body.status).trim();
-      if (
-        !VALID_LIMSY_HEARING_STATUSES.includes(
-          trimmedStatus as (typeof VALID_LIMSY_HEARING_STATUSES)[number]
-        )
-      ) {
-        return NextResponse.json(
-          {
-            error: `Invalid status. Must be one of: ${VALID_LIMSY_HEARING_STATUSES.join(", ")}`,
-          },
-          { status: 400 }
-        );
-      }
-      status = trimmedStatus as (typeof VALID_LIMSY_HEARING_STATUSES)[number];
-    }
-
-    const ip =
-      req.headers.get("cf-connecting-ip") ??
-      req.headers.get("x-real-ip") ??
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-      "127.0.0.1";
-
-    const actor = `user:${ctx.userId}`; // CR-002: Hardened Actor format
-
-    const row = await withTenant(ctx.tenantId, async (tx) => {
-      const [inserted] = await tx
-        .insert(limsyHearings)
-        .values({
-          tenantId: ctx.tenantId,
-          caseId: Number(body.caseId),
-          hearingNumber,
-          scheduledDate,
-          status,
-          boardPosition: body.boardPosition ? Number(body.boardPosition) : null,
-          courtRoom: body.courtRoom ? String(body.courtRoom).trim() : null,
-          sessionType: body.sessionType ? String(body.sessionType).trim() : "regular",
-          adjournmentCount: 0, // Always initialise at zero; incremented via PATCH on adjournment
-          appearances: body.appearances ?? null,
-          documentLinks: body.documentLinks ?? null,
-          complianceDeadline: body.complianceDeadline ? new Date(body.complianceDeadline) : null,
-          complianceNotes: body.complianceNotes ? String(body.complianceNotes).trim() : null,
-          createdBy: ctx.userId,
-        })
-        .returning();
-
-      await tx.insert(auditLogs).values({
+  const row = await withTenant(ctx.tenantId, async (tx) => {
+    const [inserted] = await tx
+      .insert(limsyHearings)
+      .values({
         tenantId: ctx.tenantId,
-        actor, // CR-002
-        action: `limsy.hearing.schedule:${inserted.hearingNumber}`,
-        target: `case:${inserted.caseId}`,
-        severity: "warn",
-        ipAddress: ip,
-      });
+        caseId: Number(body.caseId),
+        hearingNumber,
+        scheduledDate,
+        status,
+        boardPosition: body.boardPosition ? Number(body.boardPosition) : null,
+        courtRoom: body.courtRoom ? String(body.courtRoom).trim() : null,
+        sessionType: body.sessionType ? String(body.sessionType).trim() : "regular",
+        adjournmentCount: 0, // Always initialise at zero; incremented via PATCH on adjournment
+        appearances: body.appearances ?? null,
+        documentLinks: body.documentLinks ?? null,
+        complianceDeadline: body.complianceDeadline ? new Date(body.complianceDeadline) : null,
+        complianceNotes: body.complianceNotes ? String(body.complianceNotes).trim() : null,
+        createdBy: ctx.userId,
+      })
+      .returning();
 
-      return inserted;
+    await tx.insert(auditLogs).values({
+      tenantId: ctx.tenantId,
+      actor, // CR-002
+      action: `limsy.hearing.schedule:${inserted.hearingNumber}`,
+      target: `case:${inserted.caseId}`,
+      severity: "warn",
+      ipAddress: ip,
     });
 
-    return NextResponse.json(row, { status: 201 });
-  } catch (error) {
-    console.error("[LIMSY] hearing POST error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+    return inserted;
+  });
+
+  return NextResponse.json(row, { status: 201 });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -162,111 +153,114 @@ type HearingPatch = Omit<Partial<typeof limsyHearings.$inferInsert>, 'adjournmen
   adjournmentCount?: number | SQL<unknown>;
 };
 
-export async function PATCH(req: NextRequest) {
-  try {
-    const ctx = getRequestContext(req);
-    const denied = requireRole(ctx, "architect");
-    if (denied) return denied;
+async function _PATCH(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const denied = requireRole(ctx, "architect");
+  if (denied) return denied;
 
-    const body = await req.json().catch(() => ({}));
-    if (!body.id) {
-      return NextResponse.json({ error: "Hearing ID is required." }, { status: 400 });
-    }
+  const body = await req.json().catch(() => ({}));
+  if (!body.id) {
+    return NextResponse.json({ error: "Hearing ID is required." }, { status: 400 });
+  }
 
-    const patch: HearingPatch = {};
+  const patch: HearingPatch = {};
 
-    if (body.status !== undefined) {
-      const trimmedStatus = String(body.status).trim();
-      if (
-        !VALID_LIMSY_HEARING_STATUSES.includes(
-          trimmedStatus as (typeof VALID_LIMSY_HEARING_STATUSES)[number]
-        )
-      ) {
-        return NextResponse.json(
-          {
-            error: `Invalid status. Must be one of: ${VALID_LIMSY_HEARING_STATUSES.join(", ")}`,
-          },
-          { status: 400 }
-        );
-      }
-      patch.status = trimmedStatus as (typeof VALID_LIMSY_HEARING_STATUSES)[number];
-
-      // CR-001: Safely increment adjournment count on db side ONLY when status transitions to adjourned
-      if (patch.status === "adjourned") {
-        patch.adjournmentCount = sql`${limsyHearings.adjournmentCount} + 1`;
-        
-        if (body.adjournmentReason !== undefined) {
-          patch.adjournmentReason = String(body.adjournmentReason).trim();
-        }
-        if (body.adjournedBy !== undefined) {
-          patch.adjournedBy = String(body.adjournedBy).trim();
-        }
-      }
-    }
-
-    if (body.actualDate !== undefined) {
-      if (body.actualDate === null) {
-        patch.actualDate = null;
-      } else {
-        const actualDate = new Date(body.actualDate);
-        if (isNaN(actualDate.getTime())) {
-          return NextResponse.json({ error: "Invalid actualDate format." }, { status: 400 });
-        }
-        patch.actualDate = actualDate;
-      }
-    }
-
-    if (Object.keys(patch).length === 0) {
+  if (body.status !== undefined) {
+    const trimmedStatus = String(body.status).trim();
+    if (
+      !VALID_LIMSY_HEARING_STATUSES.includes(
+        trimmedStatus as (typeof VALID_LIMSY_HEARING_STATUSES)[number]
+      )
+    ) {
       return NextResponse.json(
-        { error: "No valid fields provided for update." },
+        {
+          error: `Invalid status. Must be one of: ${VALID_LIMSY_HEARING_STATUSES.join(", ")}`,
+        },
         { status: 400 }
       );
     }
+    patch.status = trimmedStatus as (typeof VALID_LIMSY_HEARING_STATUSES)[number];
 
-    patch.updatedBy = ctx.userId;
-    patch.updatedAt = new Date();
-
-    const ip =
-      req.headers.get("cf-connecting-ip") ??
-      req.headers.get("x-real-ip") ??
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-      "127.0.0.1";
+    // CR-001: Safely increment adjournment count on db side ONLY when status transitions to adjourned
+    if (patch.status === "adjourned") {
+      patch.adjournmentCount = sql`${limsyHearings.adjournmentCount} + 1`;
       
-    const actor = `user:${ctx.userId}`; // CR-002: Hardened Actor format
-
-    const row = await withTenant(ctx.tenantId, async (tx) => {
-      const [updated] = await tx
-        .update(limsyHearings)
-        .set(patch)
-        .where(
-          and(
-            eq(limsyHearings.id, Number(body.id)),
-            eq(limsyHearings.tenantId, ctx.tenantId)
-          )
-        )
-        .returning();
-
-      if (updated) {
-        await tx.insert(auditLogs).values({
-          tenantId: ctx.tenantId,
-          actor, // CR-002
-          action: `limsy.hearing.update:${updated.hearingNumber}`,
-          target: String(updated.id),
-          severity: "warn",
-          ipAddress: ip,
-        });
+      if (body.adjournmentReason !== undefined) {
+        patch.adjournmentReason = String(body.adjournmentReason).trim();
       }
+      if (body.adjournedBy !== undefined) {
+        patch.adjournedBy = String(body.adjournedBy).trim();
+      }
+    }
+  }
 
-      return updated;
-    });
+  if (body.actualDate !== undefined) {
+    if (body.actualDate === null) {
+      patch.actualDate = null;
+    } else {
+      const actualDate = new Date(body.actualDate);
+      if (isNaN(actualDate.getTime())) {
+        return NextResponse.json({ error: "Invalid actualDate format." }, { status: 400 });
+      }
+      patch.actualDate = actualDate;
+    }
+  }
 
-    if (!row) {
-      return NextResponse.json({ error: "Hearing not found or access denied." }, { status: 404 });
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json(
+      { error: "No valid fields provided for update." },
+      { status: 400 }
+    );
+  }
+
+  patch.updatedBy = ctx.userId;
+  patch.updatedAt = new Date();
+
+  const ip =
+    req.headers.get("cf-connecting-ip") ??
+    req.headers.get("x-real-ip") ??
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    "127.0.0.1";
+    
+  const actor = `user:${ctx.userId}`; // CR-002: Hardened Actor format
+
+  const row = await withTenant(ctx.tenantId, async (tx) => {
+    const [updated] = await tx
+      .update(limsyHearings)
+      .set(patch)
+      .where(
+        and(
+          eq(limsyHearings.id, Number(body.id)),
+          eq(limsyHearings.tenantId, ctx.tenantId)
+        )
+      )
+      .returning();
+
+    if (updated) {
+      await tx.insert(auditLogs).values({
+        tenantId: ctx.tenantId,
+        actor, // CR-002
+        action: `limsy.hearing.update:${updated.hearingNumber}`,
+        target: String(updated.id),
+        severity: "warn",
+        ipAddress: ip,
+      });
     }
 
-    return NextResponse.json(row);
-  } catch (error) {
-    console.error("[LIMSY] hearing PATCH error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return updated;
+  });
+
+  if (!row) {
+    return NextResponse.json({ error: "Hearing not found or access denied." }, { status: 404 });
   }
+
+  return NextResponse.json(row);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EXPORT HANDLERS — Wrapped in global error boundary
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const GET = withErrorHandler(_GET);
+export const POST = withErrorHandler(_POST);
+export const PATCH = withErrorHandler(_PATCH);
