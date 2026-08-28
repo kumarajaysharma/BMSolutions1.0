@@ -1,9 +1,19 @@
-// File: src/components/workspace/BoqDataGrid.tsx
+/**
+ * src/components/workspace/BoqDataGrid.tsx
+ *
+ * Nidhivan Consulting — BOQ Data Grid
+ * ==========================================================
+ * Client Component for rendering a hierarchical Bill of Quantities.
+ * Fetches data via the RLS-enforced /api/nidhivan/boqs/[boqId]/hierarchy endpoint
+ * and natively groups items into sections on the client side.
+ */
+
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import type { nidhivanBoqItems } from '@/db/schema';
 
+// Derive the base type from the Drizzle schema
 type BoqItemType = typeof nidhivanBoqItems.$inferSelect;
 
 // Local group interface matching the flat-to-grouped data structure
@@ -29,6 +39,7 @@ export default function BoqDataGrid({ boqId, tenantId }: BoqDataGridProps) {
     setIsLoading(true);
     setError(null);
     try {
+      // 1. Fetch flat data from the RLS-enforced API
       const response = await fetch(`/api/nidhivan/boqs/${boqId}/hierarchy`, {
         headers: {
           'x-tenant-id': tenantId,
@@ -44,10 +55,12 @@ export default function BoqDataGrid({ boqId, tenantId }: BoqDataGridProps) {
       const json = await response.json();
       const rawItems = Array.isArray(json.data) ? json.data : [];
       
+      // 2. Map flat data into hierarchical groups based on sectionCode
       const groupedMap = new Map<string, BoqGroup>();
       
       rawItems.forEach((item: BoqItemType & { isSectionHeader?: boolean; sectionCode?: string; description?: string }) => {
         const secCode = item.sectionCode || 'GENERAL';
+        
         if (!groupedMap.has(secCode)) {
           groupedMap.set(secCode, {
             id: secCode,
@@ -57,7 +70,9 @@ export default function BoqDataGrid({ boqId, tenantId }: BoqDataGridProps) {
             subCategories: []
           });
         }
+        
         const group = groupedMap.get(secCode)!;
+        
         if (item.isSectionHeader) {
           group.name = item.description || group.name;
         } else {
@@ -67,6 +82,7 @@ export default function BoqDataGrid({ boqId, tenantId }: BoqDataGridProps) {
 
       const structuredData = Array.from(groupedMap.values());
       setData(structuredData.length > 0 ? structuredData : [{ id: 1, name: 'General Execution Items', items: rawItems }]);
+      
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown network error occurred');
     } finally {
@@ -89,7 +105,7 @@ export default function BoqDataGrid({ boqId, tenantId }: BoqDataGridProps) {
 
   if (isLoading) {
     return (
-      <div className="flex h-64 w-full flex-col items-center justify-center rounded-lg border border-stone-200 bg-white shadow-sm">
+      <div className="flex h-64 w-full flex-col items-center justify-center rounded-lg border border-stone-200 bg-white shadow-sm mt-8">
         <div className="mb-4 h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900"></div>
         <p className="text-sm font-medium text-slate-500">Loading Cost Breakdown Structure...</p>
       </div>
@@ -98,7 +114,7 @@ export default function BoqDataGrid({ boqId, tenantId }: BoqDataGridProps) {
 
   if (error) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-800 shadow-sm">
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-800 shadow-sm mt-8">
         <div className="mb-2 flex items-center gap-3">
           <svg className="h-5 w-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -116,8 +132,13 @@ export default function BoqDataGrid({ boqId, tenantId }: BoqDataGridProps) {
     );
   }
 
+  // Calculate global grand total across all categories
+  const grandTotalPaise = data.reduce((acc, cat) => 
+    acc + cat.items.reduce((sum, item) => sum + Number(item.amountPaise || 0), 0), 
+  0);
+
   return (
-    <div className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm mt-8">
       <div className="flex items-center justify-between border-b border-stone-200 bg-slate-50 px-6 py-4">
         <h3 className="font-semibold text-slate-800">Bill of Quantities (Cost Breakdown)</h3>
         <span className="rounded bg-stone-200 px-2 py-1 text-xs font-medium text-slate-600">
@@ -151,12 +172,26 @@ export default function BoqDataGrid({ boqId, tenantId }: BoqDataGridProps) {
               ))
             )}
           </tbody>
+          
+          {data.length > 0 && (
+            <tfoot className="bg-slate-50 border-t-2 border-slate-200">
+              <tr>
+                <td colSpan={5} className="px-6 py-4 text-right font-mono text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                  Grand Total CAPEX
+                </td>
+                <td className="px-6 py-4 text-right font-mono text-sm font-bold text-navy-900">
+                  {(grandTotalPaise / 100).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 })}
+                </td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
     </div>
   );
 }
 
+// ── Recursive Category Rendering Component ──────────────────────────────────
 function CategoryRow({ category, depth }: { category: BoqGroup; depth: number }) {
   const paddingLeft = `${depth * 1.75 + 1.5}rem`;
 
@@ -198,6 +233,7 @@ function CategoryRow({ category, depth }: { category: BoqGroup; depth: number })
         </tr>
       ))}
 
+      {/* Render nested subcategories recursively */}
       {category.subCategories?.map((subCat) => (
         <CategoryRow key={subCat.id} category={subCat} depth={depth + 1} />
       ))}
