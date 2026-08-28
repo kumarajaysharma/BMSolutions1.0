@@ -15,6 +15,10 @@
  *     Direct db.query calls bypass SET LOCAL app.current_tenant_id and expose
  *     data to cross-tenant leakage in pooled connection scenarios.
  *
+ * TRACK B (COMMERCIAL LAUNCH - DOCUMENT PIPELINE):
+ *   - Added native form POST trigger for the PDF generation pipeline.
+ *   - Passes boqId context to /api/nidhivan/export/pdf.
+ *
  * SECURITY:
  *   - withTenant() uses DATABASE_URL_UNPOOLED per ADR-001.
  *   - x-tenant-id originates exclusively from the proxy after JWT decryption.
@@ -101,29 +105,61 @@ export default async function NidhivanWorkspace() {
 
   return (
     <DprDashboardLayout projectName="NH-44 Highway Expansion (Package 1)">
-      <div className="mb-6">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-jade-600">
-          CPWD DSR 2023 — Bill of Quantities
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        
+        {/* Left: BOQ Metadata */}
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-jade-600">
+            CPWD DSR 2023 — Bill of Quantities
+          </div>
+          <h3 className="mt-1 text-lg font-semibold text-navy-800">
+            {seededBoq.title}
+          </h3>
+          <div className="mt-1 flex items-center gap-3">
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase ring-1 ring-inset ${
+                seededBoq.status === "approved"
+                  ? "bg-jade-50 text-jade-700 ring-jade-200"
+                  : seededBoq.status === "draft"
+                    ? "bg-sand-100 text-slate-500 ring-sand-300"
+                    : "bg-navy-50 text-navy-600 ring-navy-200"
+              }`}
+            >
+              {seededBoq.status}
+            </span>
+            <span className="font-mono text-[10px] text-slate-400">
+              BOQ #{seededBoq.id} — Tenant {tenantId}
+            </span>
+          </div>
         </div>
-        <h3 className="mt-1 text-lg font-semibold text-navy-800">
-          {seededBoq.title}
-        </h3>
-        <div className="mt-1 flex items-center gap-3">
-          <span
-            className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase ring-1 ring-inset ${
-              seededBoq.status === "approved"
-                ? "bg-jade-50 text-jade-700 ring-jade-200"
-                : seededBoq.status === "draft"
-                  ? "bg-sand-100 text-slate-500 ring-sand-300"
-                  : "bg-navy-50 text-navy-600 ring-navy-200"
-            }`}
-          >
-            {seededBoq.status}
-          </span>
-          <span className="font-mono text-[10px] text-slate-400">
-            BOQ #{seededBoq.id} — Tenant {tenantId}
-          </span>
+
+        {/* Right: DPR Document Generation Pipeline Trigger */}
+        <div>
+          <form method="POST" action="/api/nidhivan/export/pdf" target="_blank">
+            <input type="hidden" name="boqId" value={seededBoq.id.toString()} />
+            {/* 
+              tenantId is technically in the JWT/Cookie, but we pass it explicitly 
+              to ensure the export pipeline has immediate routing context 
+            */}
+            <input type="hidden" name="tenantId" value={tenantId.toString()} />
+            
+            <button
+              type="submit"
+              className="flex items-center gap-2 rounded-lg bg-navy-800 px-5 py-2.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-navy-700 focus:outline-none focus:ring-2 focus:ring-navy-500 focus:ring-offset-2"
+            >
+              <svg 
+                className="h-4 w-4 text-sand-300" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Generate DPR (PDF)
+            </button>
+          </form>
         </div>
+
       </div>
 
       {/* BoqDataGrid fetches full hierarchy and items via RLS-enforced API routes */}
