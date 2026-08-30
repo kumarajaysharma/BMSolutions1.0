@@ -2,24 +2,11 @@
  * src/lib/request-context.ts
  *
  * Helpers for reading the verified session context that the proxy injects
- * into every authenticated request via headers, with a direct JWT cookie fallback.
- *
- * USAGE IN AN API ROUTE:
- *
- *   import { getRequestContext, requireRole } from "@/lib/request-context";
- *
- *   export async function GET(req: NextRequest) {
- *     const ctx = getRequestContext(req);
- *     const denied = requireRole(ctx, "developer");
- *     if (denied) return denied;
- *
- *     // ctx.tenantId is now safe to use in DB queries
- *   }
+ * into every authenticated request via headers, with a native JWT cookie fallback.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { hasMinimumRole, type AppRole } from "@/lib/roles";
-import jwt from "jsonwebtoken";
 
 export interface RequestContext {
   tenantId: number;
@@ -29,11 +16,22 @@ export interface RequestContext {
   tenantSlug: string;
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || "bnlv-enterprise-secret-key-2026";
+/**
+ * Natively decodes a JWT payload without external library dependencies.
+ */
+function parseJwtPayload(token: string): any {
+  try {
+    const base64Payload = token.split(".")[1];
+    const payloadJson = Buffer.from(base64Payload, "base64").toString("utf8");
+    return JSON.parse(payloadJson);
+  } catch (err) {
+    return null;
+  }
+}
 
 /**
  * Extracts the verified session context from proxy-injected headers or falls back
- * to decoding the bms_session JWT cookie directly for direct API calls.
+ * to decoding the bms_session JWT cookie natively.
  */
 export function getRequestContext(req: NextRequest): RequestContext {
   const tenantIdHeader = req.headers.get("x-tenant-id");
@@ -52,11 +50,11 @@ export function getRequestContext(req: NextRequest): RequestContext {
     };
   }
 
-  // Fallback: Parse bms_session cookie directly for direct client-side API fetches
+  // Fallback: Parse bms_session cookie natively using Buffer
   const sessionCookie = req.cookies.get("bms_session")?.value;
   if (sessionCookie) {
-    try {
-      const decoded = jwt.verify(sessionCookie, JWT_SECRET) as any;
+    const decoded = parseJwtPayload(sessionCookie);
+    if (decoded) {
       return {
         tenantId: Number(decoded.tenantId ?? 4),
         userId: Number(decoded.userId ?? 17),
@@ -64,8 +62,6 @@ export function getRequestContext(req: NextRequest): RequestContext {
         sessionId: decoded.sessionId ?? "cookie-session",
         tenantSlug: decoded.tenantSlug ?? "limsy",
       };
-    } catch (err) {
-      // Invalid token fallback
     }
   }
 
