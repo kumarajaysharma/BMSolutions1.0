@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       if (sessionPayload && sessionPayload.sessionId) {
         const db = await getDb();
 
-        // 3. Hard-delete the session from the database to prevent replay attacks
+        // 3. Hard-delete the session from the database to prevent replay attacks and clear rows
         const deleted = await db
           .delete(sessions)
           .where(eq(sessions.id, sessionPayload.sessionId))
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
 
           await db.insert(auditLogs).values({
             tenantId: deleted[0].tenantId,
-            actor: deleted[0].userId.toString(),
+            actor: `user:${deleted[0].userId}`,
             action: "auth.logout",
             target: "",
             severity: "info",
