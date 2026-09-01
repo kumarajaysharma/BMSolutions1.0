@@ -37,3 +37,10 @@ tsc-*.txt
 *.ps1.txt 
 *.mjs.bak 
 .env.local.admin 
+cookies.txt 
+*.zip 
+audit-verifier* 
+run_tests.bat 
+test-endpoints.* 
+AUDIT_REPORT* 
+AUDIT_API* 
