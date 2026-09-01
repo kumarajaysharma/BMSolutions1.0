@@ -34,7 +34,14 @@
  */
 
 import { generateText } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { createAnthropic } from "@ai-sdk/anthropic";
+
+const anthropic = createAnthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  headers: process.env.ANTHROPIC_WORKSPACE_ID
+    ? { "anthropic-workspace-id": process.env.ANTHROPIC_WORKSPACE_ID }
+    : {},
+});
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -55,9 +62,9 @@ export interface AgentContext {
 }
 
 export interface AgentInput {
-  task:        string;                 // Natural language task description
+  task:         string;                 // Natural language task description
   contextData: Record<string, unknown>;  // Structured domain data (cases, BOQs, etc.)
-  context:     AgentContext;
+  context:      AgentContext;
 }
 
 export interface AgentOutput {
