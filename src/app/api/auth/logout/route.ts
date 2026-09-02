@@ -1,62 +1,84 @@
+/**
+ * src/app/api/auth/logout/route.ts
+ */
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { decrypt, deleteSessionCookie } from "@/lib/auth";
-import { getDb } from "@/db/index";
+import { jwtVerify } from "jose";
+import crypto from "node:crypto";
+import { db } from "@/db";
 import { sessions, auditLogs } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { deleteSessionCookie } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Read the JWT cookie securely (Awaiting cookies() for Next.js 15/16 compliance)
     const cookieStore = await cookies();
-    const token = cookieStore.get("bms_session")?.value;
+    const sessionToken = cookieStore.get("bms_session")?.value;
 
-    if (token) {
-      // 2. Decrypt the token to get the exact database session ID
-      const sessionPayload = await decrypt(token);
+    let tenantIdForLog = 1;
+    let userIdForLog = 0;
 
-      if (sessionPayload && sessionPayload.sessionId) {
-        const db = await getDb();
+    // Delete session from DB on logout — prevents session accumulation
+    if (sessionToken) {
+      try {
+        const { payload } = await jwtVerify(
+          sessionToken,
+          new TextEncoder().encode(process.env.JWT_SECRET!)
+        ).catch(() => ({ payload: null }));
 
-        // 3. Hard-delete the session from the database to prevent replay attacks and clear rows
-        const deleted = await db
-          .delete(sessions)
-          .where(eq(sessions.id, sessionPayload.sessionId))
-          .returning({
-            tenantId: sessions.tenantId,
-            userId: sessions.userId,
-          });
+        if (payload) {
+          userIdForLog = Number(payload.userId) || 0;
+          tenantIdForLog = Number(payload.tenantId) || 1;
 
-        // 4. Write an enterprise audit log for compliance tracking
-        if (deleted.length > 0) {
-          const ip =
-            req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-            req.headers.get("x-real-ip") ??
-            "";
+          if (payload.sessionId) {
+            const hash = crypto
+              .createHash("sha256")
+              .update(String(payload.sessionId))
+              .digest("hex");
+            
+            const deleted = await db
+              .delete(sessions)
+              .where(eq(sessions.tokenHash, hash))
+              .returning({ tenantId: sessions.tenantId, userId: sessions.userId });
 
-          await db.insert(auditLogs).values({
-            tenantId: deleted[0].tenantId,
-            actor: `user:${deleted[0].userId}`,
-            action: "auth.logout",
-            target: "",
-            severity: "info",
-            ipAddress: ip,
-          });
+            if (deleted.length > 0) {
+              tenantIdForLog = deleted[0].tenantId;
+              userIdForLog = deleted[0].userId;
+            }
+          }
         }
+      } catch {
+        // Session deletion failure is non-fatal — logout proceeds
       }
     }
 
-    // 5. Destroy the client-side Edge cookie using our auth utility
+    // Write an enterprise audit log for compliance tracking
+    const ip =
+      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+      req.headers.get("x-real-ip") ??
+      "";
+
+    try {
+      await db.insert(auditLogs).values({
+        tenantId: tenantIdForLog,
+        actor: `user:${userIdForLog}`,
+        action: "auth.logout",
+        target: "",
+        severity: "info",
+        ipAddress: ip,
+      });
+    } catch (auditErr) {
+      console.error("Audit log error on logout:", auditErr);
+    }
+
+    // Destroy the client-side Edge cookie
     await deleteSessionCookie();
 
     return NextResponse.json({ ok: true, message: "Logged out successfully" });
-
   } catch (error) {
     console.error("Logout Error:", error);
-    
-    // Fallback: Even if the DB fails, strictly destroy the cookie so the user isn't stuck
     await deleteSessionCookie();
     return NextResponse.json({ error: "Failed to process logout completely" }, { status: 500 });
   }
