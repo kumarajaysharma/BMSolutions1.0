@@ -6,20 +6,21 @@
  * TRACK C: Exposes the multi-agent system as a secure Next.js API route.
  * Routes tasks to Legal, Financial, or Hybrid agents based on intent.
  *
- * RBAC: "developer" minimum enabled for multi-agent test execution.
+ * RBAC: "developer" minimum — allows multi-agent task execution by all
+ *       studio roles. Sensitive data is gated at the agent prompt level.
  *
- * AUDIT: Every agent run is written to audit_logs with:
+ * AUDIT: Every agent run writes to audit_logs:
  *          actor:    "system:ai-agent:{agentName}"
  *          action:   "ai.agent.run:{taskClass}"
- *          target:    truncated task (first 80 chars)
+ *          target:   truncated task (first 80 chars)
  *          severity: "warn"
  *
  * SECURITY:
  *   - ANTHROPIC_API_KEY is server-side only — never transmitted to client
  *   - Tenant context from JWT header — not from request body
- *   - withTenant() scopes all data reads — cross-tenant agent contamination
+ *   - withTenant() scopes all data reads — cross-tenant contamination
  *     is structurally impossible via RLS
- *   - Agent context data is fetched server-side; client cannot inject
+ *   - Agent context data fetched server-side; client cannot inject
  *     arbitrary data into the agent prompt
  */
 
@@ -40,25 +41,22 @@ export const runtime  = "nodejs"; // generateText requires Node.js runtime
 // ── Request schema ─────────────────────────────────────────────────────────────
 
 interface OrchestrateRequest {
-  task:         string;                 // Natural language task description
-  contextData?: Record<string, unknown>;  // Optional pre-fetched domain data
-  // If contextData is omitted, the route auto-fetches from DB based on domain
+  task:         string;                       // Natural language task description
+  contextData?: Record<string, unknown>;      // Optional pre-fetched domain data
 }
 
-// ── Auto-context fetchers ──────────────────────────────────────────────────────
-// When the caller does not supply contextData, the route fetches the most
-// relevant tenant-scoped records to enrich the agent prompt automatically.
+// ── Legal context fetcher ──────────────────────────────────────────────────────
+// Fetches cases, upcoming hearings, and sealed orders for the tenant.
+// Hearing schedule is critical for urgency assessment by the Legal Agent.
 
 async function fetchLegalContext(tenantId: number): Promise<Record<string, unknown>> {
-  const { limsyCases, limsy_hearings_table, limsy_orders_table } = await import("@/db/schema").then(s => ({
-    limsyCases:            s.limsyCases,
-    limsy_hearings_table: s.limsyHearings,
-    limsy_orders_table:   s.limsyOrders,
-  }));
-  const { asc } = await import("drizzle-orm");
+  const { limsyCases, limsyHearings, limsyOrders } = await import("@/db/schema");
+  const { asc, eq, and, gte } = await import("drizzle-orm");
 
   return withTenant(tenantId, async (tx) => {
-    const [cases, orders] = await Promise.all([
+    const [cases, hearings, orders] = await Promise.all([
+
+      // All active cases — full detail for architect context
       tx.select({
         id:             limsyCases.id,
         internalRef:    limsyCases.internalRef,
@@ -69,23 +67,46 @@ async function fetchLegalContext(tenantId: number): Promise<Record<string, unkno
         petitioner:     limsyCases.petitioner,
         respondent:     limsyCases.respondent,
         subjectMatter:  limsyCases.subjectMatter,
+        reliefSought:   limsyCases.reliefSought,
         urgencyFlag:    limsyCases.urgencyFlag,
         nextHearingDate:limsyCases.nextHearingDate,
-      }).from(limsyCases).orderBy(asc(limsyCases.id)).limit(10),
+      }).from(limsyCases)
+        .orderBy(asc(limsyCases.id))
+        .limit(10),
 
+      // Upcoming hearings — ordered by date so agent sees next listed matters first
       tx.select({
-        id:         limsy_orders_table.id,
-        orderType:  limsy_orders_table.orderType,
-        orderTitle: limsy_orders_table.orderTitle,
-        operative:  limsy_orders_table.operative,
-        orderDate:  limsy_orders_table.orderDate,
-        cryptoHash: limsy_orders_table.cryptoHash,
-      }).from(limsy_orders_table).orderBy(asc(limsy_orders_table.id)).limit(5),
+        id:             limsyHearings.id,
+        caseId:         limsyHearings.caseId,
+        hearingNumber:  limsyHearings.hearingNumber,
+        status:         limsyHearings.status,
+        scheduledDate:  limsyHearings.scheduledDate,
+        courtRoom:      limsyHearings.courtRoom,
+        adjournmentCount: limsyHearings.adjournmentCount,
+      }).from(limsyHearings)
+        .orderBy(asc(limsyHearings.scheduledDate))
+        .limit(10),
+
+      // Sealed court orders — includes operative text and SHA-256 hash
+      tx.select({
+        id:         limsyOrders.id,
+        caseId:     limsyOrders.caseId,
+        orderType:  limsyOrders.orderType,
+        orderTitle: limsyOrders.orderTitle,
+        operative:  limsyOrders.operative,
+        orderDate:  limsyOrders.orderDate,
+        cryptoHash: limsyOrders.cryptoHash,
+      }).from(limsyOrders)
+        .orderBy(asc(limsyOrders.id))
+        .limit(5),
     ]);
 
-    return { cases, orders, tenantId };
+    return { cases, hearings, orders, tenantId };
   });
 }
+
+// ── Financial context fetcher ──────────────────────────────────────────────────
+// Fetches all Nidhivan financial data for the tenant including BOQ aggregates.
 
 async function fetchFinancialContext(tenantId: number): Promise<Record<string, unknown>> {
   const {
@@ -95,21 +116,21 @@ async function fetchFinancialContext(tenantId: number): Promise<Record<string, u
     nidhivanBoqItems,
     nidhivanFinancialMetrics,
   } = await import("@/db/schema");
-  const { asc, eq } = await import("drizzle-orm");
+  const { asc } = await import("drizzle-orm");
 
   return withTenant(tenantId, async (tx) => {
     const [projects, dprs, boqs, items, metrics] = await Promise.all([
-      tx.select().from(nidhivanProjects).limit(5),
-      tx.select().from(nidhivanDprs).limit(5),
-      tx.select().from(nidhivanBoqs).limit(5),
-      tx.select().from(nidhivanBoqItems).limit(20),
-      tx.select().from(nidhivanFinancialMetrics).limit(5),
+      tx.select().from(nidhivanProjects).orderBy(asc(nidhivanProjects.id)).limit(5),
+      tx.select().from(nidhivanDprs).orderBy(asc(nidhivanDprs.id)).limit(5),
+      tx.select().from(nidhivanBoqs).orderBy(asc(nidhivanBoqs.id)).limit(5),
+      tx.select().from(nidhivanBoqItems).orderBy(asc(nidhivanBoqItems.id)).limit(25),
+      tx.select().from(nidhivanFinancialMetrics).orderBy(asc(nidhivanFinancialMetrics.id)).limit(5),
     ]);
 
-    // Compute aggregates with explicit parameter types to satisfy strict TypeScript rules
+    // Aggregate BOQ total in paise — explicit types for TypeScript strict mode
     const boqTotalPaise = items.reduce(
-      (sum: number, i: { amountPaise?: number | string | null }) => 
-        sum + Number(i.amountPaise ?? 0), 
+      (sum: number, i: { amountPaise?: number | string | null }) =>
+        sum + Number(i.amountPaise ?? 0),
       0
     );
 
@@ -120,9 +141,9 @@ async function fetchFinancialContext(tenantId: number): Promise<Record<string, u
       items,
       metrics,
       aggregate: {
-        totalItemCount:  items.length,
+        totalItemCount: items.length,
         boqTotalPaise,
-        boqTotalCrore:   (boqTotalPaise / 1_000_000_000).toFixed(2),
+        boqTotalCrore:  (boqTotalPaise / 1_000_000_000).toFixed(2),
       },
       tenantId,
     };
@@ -134,7 +155,7 @@ async function fetchFinancialContext(tenantId: number): Promise<Record<string, u
 async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
 
-  // Updated to allow developer role access for multi-agent test execution
+  // Developer minimum — multi-agent execution available to all studio roles
   const denied = requireRole(ctx, "developer");
   if (denied) return denied;
 
@@ -149,7 +170,7 @@ async function _POST(req: NextRequest) {
 
   const task = body.task.trim();
 
-  // Build agent context from JWT-derived values (not from request body)
+  // Build agent context from JWT-derived values — never from request body
   const agentCtx: AgentContext = {
     tenantId:  ctx.tenantId,
     userId:    ctx.userId,
@@ -157,21 +178,20 @@ async function _POST(req: NextRequest) {
     sessionId: req.cookies.get("bms_session")?.value?.slice(0, 8) + "…",
   };
 
-  // If caller did not supply contextData, auto-detect domain and fetch
+  // Auto-fetch context if caller did not supply domain data
   let contextData = body.contextData ?? {};
 
   if (!body.contextData) {
-    // Quick heuristic classification to decide which DB to pre-fetch
-    const taskLower = task.toLowerCase();
-    const isLegal     = /case|petition|court|hearing|order|slp|writ|limsy|legal|advocate/.test(taskLower);
-    const isFinancial = /dpr|boq|irr|npv|nidhivan|cpwd|infra|fund|invest|project cost/.test(taskLower);
+    const taskLower  = task.toLowerCase();
+    const isLegal    = /case|petition|court|hearing|order|slp|writ|limsy|legal|advocate|article|section|act\b/.test(taskLower);
+    const isFinancial = /dpr|boq|irr|npv|nidhivan|cpwd|infra|fund|invest|project cost|crore|lakh|rate/.test(taskLower);
 
     if (isLegal && !isFinancial) {
       contextData = await fetchLegalContext(ctx.tenantId);
     } else if (isFinancial && !isLegal) {
       contextData = await fetchFinancialContext(ctx.tenantId);
     } else {
-      // Fetch both for hybrid or ambiguous tasks
+      // Hybrid or ambiguous — fetch both in parallel
       const [legal, financial] = await Promise.all([
         fetchLegalContext(ctx.tenantId),
         fetchFinancialContext(ctx.tenantId),
@@ -180,7 +200,7 @@ async function _POST(req: NextRequest) {
     }
   }
 
-  // Run orchestration
+  // Run multi-agent orchestration
   const result = await orchestrate({ task, contextData, context: agentCtx });
 
   // Write audit log for each agent that ran
