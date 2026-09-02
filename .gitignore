@@ -1,46 +1,40 @@
 # Dependencies
-/node_modules
-.pnp
-.pnp.js
-
-# Next.js build output & cache
-/.next/
-/out/
-
-# Production build
-/build
-
-# Local & Production environment files (crucial to protect secrets)
-.env*.local
-.env
-.env.production
-
-# Vercel deployment folder
-.vercel
-
 # Editor & OS files
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-
+# Local & Production environment files (crucial to protect secrets)
+# Next.js build output & cache
+# Production build
 # TypeScript cache
-*.tsbuildinfo
-.vercel
-.env*
-next-env.d.ts 
-.env.local.admin 
-bnlv-enterprise-context.md 
-tsc-*.txt 
+# Vercel deployment folder
 *.bat.bat 
+*.mjs.bak 
 *.ps1.ps1 
 *.ps1.txt 
-*.mjs.bak 
-.env.local.admin 
-cookies.txt 
+*.tsbuildinfo
 *.zip 
+.DS_Store
+.env
+.env*
+.env*.local
+.env.local.admin 
+.env.local.admin 
+.env.production
+.idea/
+.pnp
+.pnp.js
+.vercel
+.vercel
+.vscode/
+/.next/
+/build
+/node_modules
+/out/
 audit-verifier* 
+AUDIT_API* 
+AUDIT_REPORT* 
+bnlv-enterprise-context.md 
+cookies.txt 
+next-env.d.ts 
 run_tests.bat 
 test-endpoints.* 
-AUDIT_REPORT* 
-AUDIT_API* 
+Thumbs.db
+tsc-*.txt 
