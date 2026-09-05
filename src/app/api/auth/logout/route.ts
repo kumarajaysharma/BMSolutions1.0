@@ -1,14 +1,15 @@
 /**
  * src/app/api/auth/logout/route.ts
+ *
+ * BNLV Studio — Zero-Trust Logout & Session Revocation
  */
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { jwtVerify } from "jose";
 import crypto from "node:crypto";
-import { db } from "@/db";
+import { getDb } from "@/db/index";
 import { sessions, auditLogs } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { deleteSessionCookie } from "@/lib/auth";
+import { decrypt, deleteSessionCookie } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -23,10 +24,7 @@ export async function POST(req: NextRequest) {
     // Delete session from DB on logout — prevents session accumulation
     if (sessionToken) {
       try {
-        const { payload } = await jwtVerify(
-          sessionToken,
-          new TextEncoder().encode(process.env.JWT_SECRET!)
-        ).catch(() => ({ payload: null }));
+        const payload = await decrypt(sessionToken);
 
         if (payload) {
           userIdForLog = Number(payload.userId) || 0;
@@ -38,6 +36,7 @@ export async function POST(req: NextRequest) {
               .update(String(payload.sessionId))
               .digest("hex");
             
+            const db = await getDb();
             const deleted = await db
               .delete(sessions)
               .where(eq(sessions.tokenHash, hash))
@@ -49,8 +48,9 @@ export async function POST(req: NextRequest) {
             }
           }
         }
-      } catch {
-        // Session deletion failure is non-fatal — logout proceeds
+      } catch (err) {
+        // Session decryption or deletion failure is non-fatal — logout proceeds
+        console.error("Logout session cleanup warning:", err);
       }
     }
 
@@ -61,6 +61,7 @@ export async function POST(req: NextRequest) {
       "";
 
     try {
+      const db = await getDb();
       await db.insert(auditLogs).values({
         tenantId: tenantIdForLog,
         actor: `user:${userIdForLog}`,
@@ -76,9 +77,9 @@ export async function POST(req: NextRequest) {
     // Destroy the client-side Edge cookie
     await deleteSessionCookie();
 
-    return NextResponse.json({ ok: true, message: "Logged out successfully" });
+    return NextResponse.json({ success: true, message: "Logged out successfully" });
   } catch (error) {
-    console.error("Logout Error:", error);
+    console.error("Logout Error Exception:", error);
     await deleteSessionCookie();
     return NextResponse.json({ error: "Failed to process logout completely" }, { status: 500 });
   }
