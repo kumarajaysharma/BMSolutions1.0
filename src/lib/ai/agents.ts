@@ -38,9 +38,11 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 
 const anthropic = createAnthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
-  headers: process.env.ANTHROPIC_WORKSPACE_ID
-    ? { "anthropic-workspace-id": process.env.ANTHROPIC_WORKSPACE_ID }
-    : {},
+  headers: {
+    ...(process.env.ANTHROPIC_WORKSPACE_ID
+      ? { "anthropic-workspace-id": process.env.ANTHROPIC_WORKSPACE_ID }
+      : {}),
+  },
 });
 
 // ── Types ─────────────────────────────────────────────────────────────────────
