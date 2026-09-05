@@ -1,30 +1,31 @@
-import { NextResponse, NextRequest } from "next/server";
-import { db, withTenant } from "@/db";
-import { nidhivanProjects } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+/**
+ * src/app/api/nidhivan/projects/route.ts
+ * GET /api/nidhivan/projects
+ *
+ * Returns all infrastructure projects for the authenticated tenant.
+ * RLS enforced via withTenant() — cross-tenant leakage structurally impossible.
+ * RBAC: developer minimum (read-only financial data).
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import { asc }                       from "drizzle-orm";
+import { withErrorHandler }          from "@/lib/api-handler";
 import { getRequestContext, requireRole } from "@/lib/request-context";
+import { withTenant }                from "@/db";
+import { nidhivanProjects }          from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
-  try {
-    const ctx = getRequestContext(req);
-    const denied = requireRole(ctx, "viewer");
-    if (denied) return denied;
+async function _GET(req: NextRequest) {
+  const ctx    = getRequestContext(req);
+  const denied = requireRole(ctx, "developer");
+  if (denied) return denied;
 
-    const tenantId = Number(ctx.tenantId);
+  const data = await withTenant(ctx.tenantId, async (tx) =>
+    tx.select().from(nidhivanProjects).orderBy(asc(nidhivanProjects.id))
+  );
 
-    const data = await withTenant(tenantId, async (tx) => {
-      return await tx
-        .select()
-        .from(nidhivanProjects)
-        .where(eq(nidhivanProjects.tenantId, tenantId))
-        .orderBy(desc(nidhivanProjects.createdAt));
-    });
-
-    return NextResponse.json({ success: true, data }, { status: 200 });
-  } catch (error) {
-    console.error("[NIDHIVAN] Projects Fetch Error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+  return NextResponse.json({ success: true, data });
 }
+
+export const GET = withErrorHandler(_GET);
