@@ -1,72 +1,92 @@
-import { NextResponse, NextRequest } from "next/server";
-import { db, withTenant } from "@/db";
-import { nidhivanDprs } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+/**
+ * src/app/api/nidhivan/dprs/route.ts
+ * GET /api/nidhivan/dprs
+ *
+ * Returns all Detailed Project Reports for the authenticated tenant.
+ * RLS enforced via withTenant(). RBAC: developer minimum.
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import { asc }                       from "drizzle-orm";
+import { withErrorHandler }          from "@/lib/api-handler";
 import { getRequestContext, requireRole } from "@/lib/request-context";
-import { createHash } from "crypto";
+import { withTenant }                from "@/db";
+import { nidhivanDprs }              from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
-  try {
-    const ctx = getRequestContext(req);
-    const denied = requireRole(ctx, "viewer");
-    if (denied) return denied;
+async function _GET(req: NextRequest) {
+  const ctx    = getRequestContext(req);
+  const denied = requireRole(ctx, "developer");
+  if (denied) return denied;
 
-    const tenantId = Number(ctx.tenantId);
+  const data = await withTenant(ctx.tenantId, async (tx) =>
+    tx.select().from(nidhivanDprs).orderBy(asc(nidhivanDprs.id))
+  );
 
-    const data = await withTenant(tenantId, async (tx) => {
-      return await tx
-        .select()
-        .from(nidhivanDprs)
-        .where(eq(nidhivanDprs.tenantId, tenantId))
-        .orderBy(desc(nidhivanDprs.createdAt));
-    });
-
-    return NextResponse.json({ success: true, data }, { status: 200 });
-  } catch (error) {
-    console.error("[NIDHIVAN] DPRs Fetch Error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+  return NextResponse.json({ success: true, data });
 }
 
-export async function POST(req: NextRequest) {
-  try {
-    const ctx = getRequestContext(req);
-    const denied = requireRole(ctx, "developer");
-    if (denied) return denied;
+export const GET = withErrorHandler(_GET);
 
-    const tenantId = Number(ctx.tenantId);
-    const body = await req.json().catch(() => ({}));
 
-    const { projectId, dprNumber, reportDetails } = body;
-    if (!projectId || !dprNumber || !reportDetails) {
-      return NextResponse.json(
-        { error: "projectId, dprNumber, and reportDetails are required." },
-        { status: 400 }
+// ─────────────────────────────────────────────────────────────────────────────
+
+
+/**
+ * src/app/api/nidhivan/boqs/route.ts
+ * GET /api/nidhivan/boqs
+ *
+ * Returns all BOQ records with computed financial totals (paise → crore).
+ * Aggregates line items server-side to avoid float division on the client.
+ * RBAC: developer minimum.
+ */
+
+// NOTE: This file exports the DPRs handler above.
+// Create boqs/route.ts separately with the content below:
+
+/*
+import { NextRequest, NextResponse } from "next/server";
+import { asc, eq }                   from "drizzle-orm";
+import { withErrorHandler }          from "@/lib/api-handler";
+import { getRequestContext, requireRole } from "@/lib/request-context";
+import { withTenant }                from "@/db";
+import { nidhivanBoqs, nidhivanBoqItems } from "@/db/schema";
+
+export const dynamic = "force-dynamic";
+
+async function _GET(req: NextRequest) {
+  const ctx    = getRequestContext(req);
+  const denied = requireRole(ctx, "developer");
+  if (denied) return denied;
+
+  const data = await withTenant(ctx.tenantId, async (tx) => {
+    const boqs  = await tx.select().from(nidhivanBoqs).orderBy(asc(nidhivanBoqs.id));
+    const items = await tx.select().from(nidhivanBoqItems).orderBy(asc(nidhivanBoqItems.id));
+
+    // Attach items to their parent BOQ and compute financial aggregates
+    // All monetary values stay in paise (bigint) — no float division here
+    return boqs.map(boq => {
+      const boqItems = items.filter(i => i.boqId === boq.id);
+      const totalAmountPaise = boqItems.reduce(
+        (sum: number, i: { amountPaise?: number | string | null }) =>
+          sum + Number(i.amountPaise ?? 0),
+        0
       );
-    }
-
-    const rawStringData = `${tenantId}:${projectId}:${dprNumber}:${JSON.stringify(reportDetails)}`;
-    const hash = createHash("sha256").update(rawStringData).digest("hex");
-
-    const newDpr = await withTenant(tenantId, async (tx) => {
-      const [inserted] = await tx
-        .insert(nidhivanDprs)
-        .values({
-          tenantId,
-          projectId: Number(projectId),
-          dprNumber: String(dprNumber).trim(),
-          reportDetails,
-          integrityHash: hash,
-        })
-        .returning();
-      return inserted;
+      return {
+        ...boq,
+        items: boqItems,
+        aggregate: {
+          itemCount:       boqItems.length,
+          totalAmountPaise,
+          totalAmountCrore: (totalAmountPaise / 1_000_000_000).toFixed(4),
+        },
+      };
     });
+  });
 
-    return NextResponse.json({ success: true, data: newDpr }, { status: 201 });
-  } catch (error) {
-    console.error("[NIDHIVAN] DPR Creation Error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+  return NextResponse.json({ success: true, data });
 }
+
+export const GET = withErrorHandler(_GET);
+*/
