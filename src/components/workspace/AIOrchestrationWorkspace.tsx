@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useRef } from "react"
 
+// ── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
   bg:      '#070910',
   surface: '#0A0D18',
@@ -28,6 +29,7 @@ const C = {
   sans:    "'Inter',system-ui,sans-serif",
 }
 
+// ── Preset tasks for immediate launch ─────────────────────────────────────────
 const PRESETS = [
   {
     label: 'P01 — Article 356 SLP',
@@ -61,26 +63,27 @@ const PRESETS = [
   },
 ]
 
-const DOMAIN_STYLE: Record<string, { color: string; label: string; icon: string }> = {
+const DOMAIN_STYLE = {
   LEGAL:    { color: C.legal,  label: 'LEGAL AGENT',     icon: '⚖' },
   FINANCIAL:{ color: C.fin,    label: 'FINANCIAL AGENT',  icon: '₹' },
   HYBRID:   { color: C.hybrid, label: 'DUAL AGENT',       icon: '⇄' },
   UNKNOWN:  { color: C.muted,  label: 'UNKNOWN',           icon: '?' },
 }
 
-const AGENT_STYLE: Record<string, { color: string; icon: string; title: string }> = {
+const AGENT_STYLE = {
   legal:        { color: C.legal,  icon: '⚖', title: 'Senior Advocate · Supreme Court of India' },
   financial:    { color: C.fin,    icon: '₹', title: 'McKinsey Infrastructure Finance Partner'   },
   orchestrator: { color: C.hybrid, icon: '⇄', title: 'BNLV AI Orchestrator'                     },
 }
 
-function AgentCard({ output, index }: { output: any; index: number }) {
+function AgentCard({ output, index }) {
   const as = AGENT_STYLE[output.agentName] || AGENT_STYLE.orchestrator
   const sections = output.content.split(/\n(?=[A-Z ]+:)/g).filter(Boolean)
 
   return (
     <div style={{ background: C.card, border: `1px solid ${as.color}30`, borderRadius: 12,
       overflow: 'hidden', marginBottom: 14 }}>
+      {/* Agent header */}
       <div style={{ background: `${as.color}12`, borderBottom: `1px solid ${as.color}25`,
         padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -102,13 +105,14 @@ function AgentCard({ output, index }: { output: any; index: number }) {
           <div style={{ background: `${as.color}20`, border: `1px solid ${as.color}40`,
             borderRadius: 4, padding: '2px 8px', fontFamily: C.mono, fontSize: 8,
             color: as.color, fontWeight: 700, letterSpacing: '0.08em' }}>
-            {output.confidence?.toUpperCase() || 'HIGH'}
+            {output.confidence.toUpperCase()}
           </div>
         </div>
       </div>
 
+      {/* Output content */}
       <div style={{ padding: 16 }}>
-        {sections.map((section: string, i: number) => {
+        {sections.map((section, i) => {
           const colonIdx = section.indexOf(':')
           if (colonIdx === -1) {
             return (
@@ -136,18 +140,18 @@ function AgentCard({ output, index }: { output: any; index: number }) {
 export default function AIOrchestrationWorkspace() {
   const [task, setTask]         = useState('')
   const [running, setRunning]   = useState(false)
-  const [result, setResult]     = useState<any>(null)
+  const [result, setResult]     = useState(null)
   const [error, setError]       = useState('')
-  const [history, setHistory]   = useState<any[]>([])
+  const [history, setHistory]   = useState([])
   const [tab, setTab]           = useState('console')
-  const outputRef               = useRef<HTMLDivElement>(null)
+  const outputRef               = useRef(null)
 
   useEffect(() => {
     const lk = document.createElement('link')
     lk.rel   = 'stylesheet'
     lk.href  = 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600&display=swap'
     document.head.appendChild(lk)
-    return () => { document.head.removeChild(lk) }
+    return () => document.head.removeChild(lk)
   }, [])
 
   useEffect(() => {
@@ -156,32 +160,117 @@ export default function AIOrchestrationWorkspace() {
     }
   }, [result])
 
-  const runOrchestration = async (taskText?: string) => {
+  const runOrchestration = async (taskText) => {
     const t = taskText || task
     if (!t.trim() || t.trim().length < 10) { setError('Task must be at least 10 characters.'); return }
     setRunning(true); setResult(null); setError('')
 
     try {
-      const res = await fetch('/api/ai/orchestrate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task: t })
+      // Demo mode — calls Claude API directly with the orchestration logic
+      const start = Date.now()
+
+      // Classify task
+      const classRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6', max_tokens: 300,
+          messages: [{ role: 'user', content:
+            `Classify this task into LEGAL, FINANCIAL, or HYBRID. Respond with JSON only:\n{"taskClass":"LEGAL"|"FINANCIAL"|"HYBRID","confidence":"high"|"medium"|"low","reasoning":"..."}\n\nTask: ${t}` }]
+        })
       })
-      const data = await res.json()
-      if (!data.success) {
-        throw new Error(data.error || 'Orchestration failed')
+      const classData = await classRes.json()
+      let classification = { taskClass: 'LEGAL', confidence: 'high', reasoning: 'Default classification' }
+      try { classification = JSON.parse(classData.content?.[0]?.text?.replace(/```json|```/g,'').trim() || '{}') }
+      catch {}
+
+      const { taskClass } = classification
+      const ds = DOMAIN_STYLE[taskClass] || DOMAIN_STYLE.UNKNOWN
+      const outputs = []
+
+      // Legal agent
+      if (taskClass === 'LEGAL' || taskClass === 'HYBRID') {
+        const t0 = Date.now()
+        const lr = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-6', max_tokens: 900,
+            system: `You are a Senior Advocate at the Supreme Court of India with 25 years of experience.
+Draft a formal legal analysis using these EXACT headings:
+CASE ANALYSIS:
+APPLICABLE AUTHORITIES:
+STRATEGIC RECOMMENDATIONS:
+RISK ASSESSMENT:`,
+            messages: [{ role: 'user', content:
+              `Task: ${taskClass === 'HYBRID' ? '[LEGAL COMPONENT] ' : ''}${t}` }]
+          })
+        })
+        const ld = await lr.json()
+        outputs.push({
+          agentName: 'legal', taskClass: 'LEGAL',
+          content: ld.content?.[0]?.text || 'No output.',
+          confidence: 'high', tokensUsed: ld.usage?.output_tokens || 0, durationMs: Date.now() - t0
+        })
       }
-      setResult(data)
-      setHistory(h => [data, ...h].slice(0, 10))
+
+      // Financial agent
+      if (taskClass === 'FINANCIAL' || taskClass === 'HYBRID') {
+        const t0 = Date.now()
+        const fr = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-6', max_tokens: 900,
+            system: `You are a Senior Partner at McKinsey & Company specialising in infrastructure finance.
+Draft a formal financial analysis using these EXACT headings:
+PROJECT OVERVIEW:
+ECONOMIC RATIONALE:
+FINANCIAL VIABILITY ASSESSMENT:
+CAPITAL RAISING RECOMMENDATION:`,
+            messages: [{ role: 'user', content:
+              `Task: ${taskClass === 'HYBRID' ? '[FINANCIAL COMPONENT] ' : ''}${t}` }]
+          })
+        })
+        const fd = await fr.json()
+        outputs.push({
+          agentName: 'financial', taskClass: 'FINANCIAL',
+          content: fd.content?.[0]?.text || 'No output.',
+          confidence: 'high', tokensUsed: fd.usage?.output_tokens || 0, durationMs: Date.now() - t0
+        })
+      }
+
+      let merged = null
+      if (taskClass === 'HYBRID' && outputs.length === 2) {
+        const mr = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-6', max_tokens: 600,
+            messages: [{ role: 'user', content:
+              `Merge these into a single executive brief with sections:\nEXECUTIVE BRIEF:\nLEGAL POSITION:\nFINANCIAL POSITION:\nINTEGRATED RECOMMENDATION:\n\nLegal:\n${outputs[0].content}\n\nFinancial:\n${outputs[1].content}` }]
+          })
+        })
+        const md = await mr.json()
+        merged = md.content?.[0]?.text || null
+      }
+
+      const r = {
+        taskClass, agents: outputs.map(o => o.agentName), outputs, merged,
+        totalTokens: outputs.reduce((s, o) => s + o.tokensUsed, 0),
+        durationMs: Date.now() - start, task: t, timestamp: new Date().toISOString(),
+      }
+      setResult(r)
+      setHistory(h => [r, ...h].slice(0, 10))
       setTask('')
-    } catch (e: any) {
+    } catch (e) {
       setError(`Orchestration error: ${e?.message || 'Unknown error'}`)
     }
     setRunning(false)
   }
 
+  const ds = result ? (DOMAIN_STYLE[result.taskClass] || DOMAIN_STYLE.UNKNOWN) : null
+
   return (
     <div style={{ fontFamily: C.sans, background: C.bg, color: C.text, minHeight: '100vh' }}>
+
+      {/* Header */}
       <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`,
         padding: '0 20px', display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', height: 56 }}>
@@ -209,6 +298,7 @@ export default function AIOrchestrationWorkspace() {
         </div>
       </div>
 
+      {/* Tabs */}
       <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: '0 20px', display: 'flex' }}>
         {[['console','CONSOLE'],['presets','PRESETS'],['history','HISTORY']].map(([id,label]) => (
           <button key={id} onClick={() => setTab(id)} style={{
@@ -221,17 +311,22 @@ export default function AIOrchestrationWorkspace() {
       </div>
 
       <div style={{ padding: 20, maxWidth: 900, margin: '0 auto' }}>
+
+        {/* CONSOLE */}
         {tab === 'console' && (
           <div>
+            {/* Task input */}
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, marginBottom: 16 }}>
               <div style={{ fontFamily: C.mono, fontSize: 9, color: C.gold, fontWeight: 700,
                 letterSpacing: '0.14em', marginBottom: 10 }}>⚡ TASK INPUT — Natural language · Auto-routed to Legal, Financial, or Hybrid agents</div>
               <textarea value={task} onChange={e => setTask(e.target.value)} rows={4}
-                placeholder="Describe what you need..."
+                placeholder="Describe what you need. Examples:&#10;• Analyse the Article 356 SLP urgency and whether interim stay is warranted&#10;• Generate investor DPR narrative for the NH-44 highway project&#10;• NCLT oppression petition involves disputed infrastructure escrow — both legal and financial analysis needed"
                 style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
                   padding: '10px 12px', color: C.text, fontSize: 12, fontFamily: C.sans,
                   outline: 'none', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.7 }} />
-              {error && <div style={{ fontFamily: C.mono, fontSize: 9, color: C.danger, marginTop: 8 }}>{error}</div>}
+              {error && (
+                <div style={{ fontFamily: C.mono, fontSize: 9, color: C.danger, marginTop: 8 }}>{error}</div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10, gap: 10 }}>
                 {task && (
                   <button onClick={() => { setTask(''); setResult(null); setError('') }}
@@ -250,17 +345,27 @@ export default function AIOrchestrationWorkspace() {
               </div>
             </div>
 
+            {/* Running state */}
             {running && (
               <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
                 padding: 24, textAlign: 'center', marginBottom: 16 }}>
                 <div style={{ fontFamily: C.mono, fontSize: 10, color: C.gold, marginBottom: 12 }}>
                   ◌ ORCHESTRATING — Classifying task → Routing to agents → Generating output
                 </div>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 16 }}>
+                  {['Classification', 'Agent Dispatch', 'Output Generation'].map((s, i) => (
+                    <div key={i} style={{ fontFamily: C.mono, fontSize: 8, color: C.muted }}>
+                      <span style={{ color: C.gold }}>◌</span> {s}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
+            {/* Result */}
             {result && !running && (
               <div ref={outputRef}>
+                {/* Classification banner */}
                 <div style={{ background: `${DOMAIN_STYLE[result.taskClass]?.color}15`,
                   border: `1px solid ${DOMAIN_STYLE[result.taskClass]?.color}35`,
                   borderRadius: 10, padding: '10px 16px', marginBottom: 14,
@@ -277,8 +382,15 @@ export default function AIOrchestrationWorkspace() {
                       </div>
                     </div>
                   </div>
+                  <div style={{ fontFamily: C.mono, fontSize: 8, color: C.muted }}>
+                    {new Date(result.timestamp).toLocaleTimeString('en-IN')}
+                  </div>
                 </div>
-                {result.outputs.map((o: any, i: number) => <AgentCard key={i} output={o} index={i} />)}
+
+                {/* Agent outputs */}
+                {result.outputs.map((o, i) => <AgentCard key={i} output={o} index={i} />)}
+
+                {/* Hybrid merged brief */}
                 {result.merged && (
                   <div style={{ background: `${C.hybrid}10`, border: `1px solid ${C.hybrid}35`,
                     borderRadius: 12, padding: 18 }}>
@@ -293,10 +405,14 @@ export default function AIOrchestrationWorkspace() {
           </div>
         )}
 
+        {/* PRESETS */}
         {tab === 'presets' && (
           <div>
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontFamily: C.serif, fontSize: 24, fontWeight: 500, marginBottom: 4 }}>Preset Tasks</div>
+              <div style={{ fontFamily: C.mono, fontSize: 9, color: C.muted }}>
+                Pre-configured tasks for the 3 pending legal cases and 5 DPR fundraising rounds
+              </div>
             </div>
             {PRESETS.map((p, i) => {
               const ds = DOMAIN_STYLE[p.domain]
@@ -330,6 +446,7 @@ export default function AIOrchestrationWorkspace() {
           </div>
         )}
 
+        {/* HISTORY */}
         {tab === 'history' && (
           <div>
             <div style={{ marginBottom: 16 }}>
@@ -340,6 +457,7 @@ export default function AIOrchestrationWorkspace() {
               <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
                 padding: 40, textAlign: 'center' }}>
                 <div style={{ fontFamily: C.serif, fontSize: 18, color: C.muted, marginBottom: 6 }}>No runs yet</div>
+                <div style={{ fontFamily: C.mono, fontSize: 9, color: C.muted }}>Use the Console or Presets tab to run your first agent task</div>
               </div>
             ) : history.map((r, i) => {
               const ds = DOMAIN_STYLE[r.taskClass] || DOMAIN_STYLE.UNKNOWN
@@ -351,7 +469,7 @@ export default function AIOrchestrationWorkspace() {
                     <span style={{ fontFamily: C.mono, fontSize: 8, color: ds.color, fontWeight: 700,
                       background: `${ds.color}15`, padding: '2px 7px', borderRadius: 3 }}>{ds.label}</span>
                     <span style={{ fontFamily: C.mono, fontSize: 8, color: C.muted }}>
-                      {r.totalTokens} tokens · {r.durationMs}ms
+                      {r.totalTokens} tokens · {r.durationMs}ms · {new Date(r.timestamp).toLocaleTimeString('en-IN')}
                     </span>
                   </div>
                   <div style={{ fontFamily: C.serif, fontSize: 13, color: C.sub, lineHeight: 1.4 }}>
