@@ -11,14 +11,18 @@
  * RLS:  withTenant() enforces tenant isolation.
  */
 
-import { NextRequest, NextResponse }     from "next/server";
-import { asc }                         from "drizzle-orm";
-import { withErrorHandler }              from "@/lib/api-handler";
+import { NextRequest, NextResponse }      from "next/server";
+import { asc, InferSelectModel }          from "drizzle-orm";
+import { withErrorHandler }               from "@/lib/api-handler";
 import { getRequestContext, requireRole } from "@/lib/request-context";
-import { withTenant }                    from "@/db";
+import { withTenant }                     from "@/db";
 import { nidhivanBoqs, nidhivanBoqItems } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
+
+// Extract exact types from the Drizzle schema
+type Boq = InferSelectModel<typeof nidhivanBoqs>;
+type BoqItem = InferSelectModel<typeof nidhivanBoqItems>;
 
 async function _GET(req: NextRequest) {
   const ctx    = getRequestContext(req);
@@ -34,8 +38,8 @@ async function _GET(req: NextRequest) {
     // Attach items to their parent BOQ and compute financial aggregates.
     // All monetary values stay in paise — no floating-point division in DB
     // (TD-002: quantity is double_precision — Phase C migration to numeric(12,3))
-    return boqs.map((boq: typeof nidhivanBoqs.$inferSelect) => {
-      const boqItems = items.filter((i: typeof nidhivanBoqItems.$inferSelect) => i.boqId === boq.id);
+    return boqs.map((boq: Boq) => {
+      const boqItems = items.filter((i: BoqItem) => i.boqId === boq.id);
 
       const totalAmountPaise = boqItems.reduce(
         (sum: number, i: { amountPaise?: number | string | null }) =>

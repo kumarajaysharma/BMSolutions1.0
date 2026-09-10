@@ -11,20 +11,20 @@
  * AGENT TOPOLOGY:
  *
  *   User Request
- *        │
- *        ▼
+ *       │
+ *       ▼
  *   Orchestrator (claude-sonnet-4-6 — router persona)
- *        │ classifies task as LEGAL | FINANCIAL | HYBRID
- *        │
- *        ├── LEGAL ──► LegalAgent (Supreme Court Advocate persona)
- *        │             Input: limsy_cases + hearing schedule
- *        │             Output: legal brief, precedent summary, urgency assessment
- *        │
- *        ├── FINANCIAL ► FinancialAgent (McKinsey Infrastructure Finance persona)
- *        │             Input: nidhivan_boqs + nidhivan_financial_metrics
- *        │             Output: DPR narrative, IRR commentary, investor brief
- *        │
- *        └── HYBRID ──► Sequential: LegalAgent → FinancialAgent → merge
+ *       │ classifies task as LEGAL | FINANCIAL | HYBRID
+ *       │
+ *       ├── LEGAL ──► LegalAgent (Supreme Court Advocate persona)
+ *       │               Input: limsy_cases + hearing schedule
+ *       │               Output: legal brief, precedent summary, urgency assessment
+ *       │
+ *       ├── FINANCIAL ► FinancialAgent (McKinsey Infrastructure Finance persona)
+ *       │               Input: nidhivan_boqs + nidhivan_financial_metrics
+ *       │               Output: DPR narrative, IRR commentary, investor brief
+ *       │
+ *       └── HYBRID ──► Sequential: LegalAgent → FinancialAgent → merge
  *
  * SECURITY:
  *   - All database reads go through withTenant() — RLS enforced per tenant
@@ -33,28 +33,14 @@
  *   - ANTHROPIC_API_KEY never leaves the server — no client-side exposure
  */
 
-import { generateText } from "ai";
-import { createAnthropic } from "@ai-sdk/anthropic";
-
-const anthropic = createAnthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-  headers: {
-    ...(process.env.ANTHROPIC_WORKSPACE_ID
-      ? { "anthropic-workspace-id": process.env.ANTHROPIC_WORKSPACE_ID }
-      : {}),
-  },
-});
+import { generateText, type CoreMessage } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type AgentName    = "orchestrator" | "legal" | "financial";
 export type TaskClass    = "LEGAL" | "FINANCIAL" | "HYBRID" | "UNKNOWN";
 export type AgentStatus  = "idle" | "running" | "complete" | "error";
-
-export type CoreMessage = {
-  role: "system" | "user" | "assistant";
-  content: string;
-};
 
 export interface AgentContext {
   tenantId:   number;
@@ -64,15 +50,15 @@ export interface AgentContext {
 }
 
 export interface AgentInput {
-  task:         string;                 // Natural language task description
+  task:        string;        // Natural language task description
   contextData: Record<string, unknown>;  // Structured domain data (cases, BOQs, etc.)
-  context:      AgentContext;
+  context:     AgentContext;
 }
 
 export interface AgentOutput {
   agentName:   AgentName;
   taskClass:   TaskClass;
-  content:     string;                 // Primary generated output
+  content:     string;        // Primary generated output
   confidence:  "high" | "medium" | "low";
   tokensUsed:  number;
   durationMs:  number;
@@ -83,7 +69,7 @@ export interface OrchestrationResult {
   taskClass:   TaskClass;
   agents:      AgentName[];
   outputs:     AgentOutput[];
-  merged?:     string;                 // Combined output for HYBRID tasks
+  merged?:     string;        // Combined output for HYBRID tasks
   totalTokens: number;
   durationMs:  number;
 }
@@ -91,6 +77,7 @@ export interface OrchestrationResult {
 // ── Model configuration ───────────────────────────────────────────────────────
 
 const MODEL = "claude-sonnet-4-6";
+const MAX_TOKENS = 1500;
 
 // ── Orchestrator Agent ────────────────────────────────────────────────────────
 // Classifies the incoming task and determines routing.
@@ -126,7 +113,7 @@ async function orchestratorClassify(task: string): Promise<{
     model: anthropic(MODEL),
     system: ORCHESTRATOR_SYSTEM,
     messages: [{ role: "user", content: task }],
-    ...({ maxOutputTokens: 300 } as any),
+    maxTokens: 300,
     temperature: 0,
   });
 
@@ -187,7 +174,7 @@ Tenant: ${input.context.tenantId} | Requested by: ${input.context.userRole} (Use
     model: anthropic(MODEL),
     system: LEGAL_SYSTEM,
     messages: [{ role: "user", content: userMessage }],
-    ...({ maxOutputTokens: 1500 } as any),
+    maxTokens: MAX_TOKENS,
     temperature: 0.1,
   });
 
@@ -196,7 +183,7 @@ Tenant: ${input.context.tenantId} | Requested by: ${input.context.userRole} (Use
     taskClass:  "LEGAL",
     content:    text,
     confidence: "high",
-    tokensUsed: usage?.totalTokens ?? 0,
+    tokensUsed: usage.totalTokens,
     durationMs: Date.now() - start,
     metadata:   { tenantId: input.context.tenantId },
   };
@@ -246,7 +233,7 @@ Tenant: ${input.context.tenantId} | Requested by: ${input.context.userRole} (Use
     model: anthropic(MODEL),
     system: FINANCIAL_SYSTEM,
     messages: [{ role: "user", content: userMessage }],
-    ...({ maxOutputTokens: 1500 } as any),
+    maxTokens: MAX_TOKENS,
     temperature: 0.1,
   });
 
@@ -255,7 +242,7 @@ Tenant: ${input.context.tenantId} | Requested by: ${input.context.userRole} (Use
     taskClass:  "FINANCIAL",
     content:    text,
     confidence: "high",
-    tokensUsed: usage?.totalTokens ?? 0,
+    tokensUsed: usage.totalTokens,
     durationMs: Date.now() - start,
     metadata:   { tenantId: input.context.tenantId },
   };
@@ -297,7 +284,7 @@ ${financialOutput.content}
 Merge these into a single executive brief.
 `.trim()
     }],
-    ...({ maxOutputTokens: 800 } as any),
+    maxTokens: 800,
     temperature: 0,
   });
   return text;
