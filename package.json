@@ -20,10 +20,10 @@
     "context": "git log -n 1 --oneline > llm-context.txt && git status >> llm-context.txt && npm run typecheck >> llm-context.txt"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.44",
+    "@ai-sdk/anthropic": "^4.0.52",
     "@neondatabase/serverless": "^1.1.0",
     "@react-pdf/renderer": "^4.9.0",
-    "ai": "^7.0.83",
+    "ai": "^7.0.97",
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.2",
@@ -34,6 +34,7 @@
     "pg": "8.20.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
+    "zod": "^4.6.1",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
