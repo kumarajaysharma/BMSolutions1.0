@@ -5,7 +5,7 @@
  * ================================================
  * TRACK C (COMPETITIVE EDGE):
  *   Defines the two production agents and the Orchestrator that routes between them.
- *   All agents run claude-sonnet-4-6 with distinct system personas and output schemas.
+ *   All agents run Claude Sonnet with Google Gemini automatic fallback.
  *   Agents receive only the tenant-scoped context they need — no cross-agent data leakage.
  *
  * AGENT TOPOLOGY:
@@ -13,28 +13,29 @@
  *   User Request
  *       │
  *       ▼
- *   Orchestrator (claude-sonnet-4-6 — router persona)
+ *   Orchestrator (Router persona)
  *       │ classifies task as LEGAL | FINANCIAL | HYBRID
  *       │
  *       ├── LEGAL ──► LegalAgent (Supreme Court Advocate persona)
- *       │               Input: limsy_cases + hearing schedule
- *       │               Output: legal brief, precedent summary, urgency assessment
+ *       │             Input: limsy_cases + hearing schedule
+ *       │             Output: legal brief, precedent summary, urgency assessment
  *       │
  *       ├── FINANCIAL ► FinancialAgent (McKinsey Infrastructure Finance persona)
- *       │               Input: nidhivan_boqs + nidhivan_financial_metrics
- *       │               Output: DPR narrative, IRR commentary, investor brief
+ *       │             Input: nidhivan_boqs + nidhivan_financial_metrics
+ *       │             Output: DPR narrative, IRR commentary, investor brief
  *       │
  *       └── HYBRID ──► Sequential: LegalAgent → FinancialAgent → merge
  *
- * SECURITY:
+ * SECURITY & RESILIENCE:
  *   - All database reads go through withTenant() — RLS enforced per tenant
  *   - Agents write to audit_logs with actor: "system:ai-agent:{agentName}"
  *   - No agent can read cross-tenant data regardless of task routing
- *   - ANTHROPIC_API_KEY never leaves the server — no client-side exposure
+ *   - Automatic Anthropic to Gemini API key failover on low credit or rate limits
  */
 
 import { generateText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { google } from "@ai-sdk/google";
 
 // ── Client Configuration ──────────────────────────────────────────────────────
 
@@ -45,6 +46,51 @@ const anthropic = createAnthropic({
     : undefined,
 });
 
+// ── Resilient Generation Wrapper (Anthropic -> Gemini Failover) ─────────────────
+
+async function generateTextWithFallback(options: {
+  system: string;
+  prompt?: string;
+  messages?: Array<{ role: "user" | "assistant"; content: string }>;
+  maxTokens?: number;
+  temperature?: number;
+}) {
+  const content = options.messages ? options.messages[0]?.content : (options.prompt ?? "");
+
+  try {
+    // Attempt primary call with Anthropic
+    return await generateText({
+      model: anthropic("claude-3-5-sonnet-20241022"),
+      system: options.system,
+      messages: [{ role: "user", content }],
+      // @ts-ignore
+      maxTokens: options.maxTokens ?? 1500,
+      temperature: options.temperature ?? 0.3,
+    });
+  } catch (primaryError: any) {
+    console.warn(
+      `[AI Fallback Warning]: Anthropic generation failed (${primaryError.message}). Failing over to Gemini...`
+    );
+
+    try {
+      // Fallback to Google Gemini
+      return await generateText({
+        model: google("gemini-2.5-flash"),
+        system: options.system,
+        messages: [{ role: "user", content }],
+        // @ts-ignore
+        maxTokens: options.maxTokens ?? 1500,
+        temperature: options.temperature ?? 0.3,
+      });
+    } catch (fallbackError: any) {
+      console.error("[AI Fallback Error]: Both Anthropic and Gemini failed.");
+      throw new Error(
+        `Primary (Anthropic): ${primaryError.message} | Fallback (Gemini): ${fallbackError.message}`
+      );
+    }
+  }
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type AgentName    = "orchestrator" | "legal" | "financial";
@@ -52,40 +98,39 @@ export type TaskClass    = "LEGAL" | "FINANCIAL" | "HYBRID" | "UNKNOWN";
 export type AgentStatus  = "idle" | "running" | "complete" | "error";
 
 export interface AgentContext {
-  tenantId:   number;
-  userId:     number;
-  userRole:   string;
+  tenantId:    number;
+  userId:      number;
+  userRole:    string;
   sessionId?: string;
 }
 
 export interface AgentInput {
-  task:        string;        // Natural language task description
+  task:         string;         // Natural language task description
   contextData: Record<string, unknown>;  // Structured domain data (cases, BOQs, etc.)
-  context:     AgentContext;
+  context:      AgentContext;
 }
 
 export interface AgentOutput {
-  agentName:   AgentName;
-  taskClass:   TaskClass;
-  content:     string;        // Primary generated output
-  confidence:  "high" | "medium" | "low";
-  tokensUsed:  number;
-  durationMs:  number;
-  metadata?:   Record<string, unknown>;
+  agentName:    AgentName;
+  taskClass:    TaskClass;
+  content:      string;         // Primary generated output
+  confidence:   "high" | "medium" | "low";
+  tokensUsed:   number;
+  durationMs:   number;
+  metadata?:    Record<string, unknown>;
 }
 
 export interface OrchestrationResult {
-  taskClass:   TaskClass;
-  agents:      AgentName[];
-  outputs:     AgentOutput[];
-  merged?:     string;        // Combined output for HYBRID tasks
+  taskClass:    TaskClass;
+  agents:       AgentName[];
+  outputs:      AgentOutput[];
+  merged?:      string;         // Combined output for HYBRID tasks
   totalTokens: number;
-  durationMs:  number;
+  durationMs:   number;
 }
 
 // ── Model configuration ───────────────────────────────────────────────────────
 
-const MODEL = "claude-sonnet-4-6";
 const MAX_TOKENS = 1500;
 
 // ── Orchestrator Agent ────────────────────────────────────────────────────────
@@ -118,11 +163,9 @@ async function orchestratorClassify(task: string): Promise<{
   legalSubTask: string | null;
   financialSubTask: string | null;
 }> {
-  const { text } = await generateText({
-    model: anthropic(MODEL),
+  const { text } = await generateTextWithFallback({
     system: ORCHESTRATOR_SYSTEM,
     messages: [{ role: "user", content: task }],
-    // @ts-ignore - TS versioning mismatch with AI SDK properties
     maxTokens: 300,
     temperature: 0,
   });
@@ -180,11 +223,9 @@ ${JSON.stringify(input.contextData, null, 2)}
 Tenant: ${input.context.tenantId} | Requested by: ${input.context.userRole} (User ID: ${input.context.userId})
 `.trim();
 
-  const { text, usage } = await generateText({
-    model: anthropic(MODEL),
+  const { text, usage } = await generateTextWithFallback({
     system: LEGAL_SYSTEM,
     messages: [{ role: "user", content: userMessage }],
-    // @ts-ignore - TS versioning mismatch with AI SDK properties
     maxTokens: MAX_TOKENS,
     temperature: 0.1,
   });
@@ -240,11 +281,9 @@ ${JSON.stringify(input.contextData, null, 2)}
 Tenant: ${input.context.tenantId} | Requested by: ${input.context.userRole} (User ID: ${input.context.userId})
 `.trim();
 
-  const { text, usage } = await generateText({
-    model: anthropic(MODEL),
+  const { text, usage } = await generateTextWithFallback({
     system: FINANCIAL_SYSTEM,
     messages: [{ role: "user", content: userMessage }],
-    // @ts-ignore - TS versioning mismatch with AI SDK properties
     maxTokens: MAX_TOKENS,
     temperature: 0.1,
   });
@@ -279,8 +318,7 @@ async function mergeOutputs(
   financialOutput: AgentOutput,
   task: string
 ): Promise<string> {
-  const { text } = await generateText({
-    model: anthropic(MODEL),
+  const { text } = await generateTextWithFallback({
     system: MERGE_SYSTEM,
     messages: [{
       role: "user",
@@ -296,7 +334,6 @@ ${financialOutput.content}
 Merge these into a single executive brief.
 `.trim()
     }],
-    // @ts-ignore - TS versioning mismatch with AI SDK properties
     maxTokens: 800,
     temperature: 0,
   });
@@ -327,8 +364,8 @@ export async function orchestrate(input: AgentInput): Promise<OrchestrationResul
 
   } else if (taskClass === "HYBRID") {
     // Run both agents with sub-task specialisation
-    const legalInput:    AgentInput = { ...input, task: legalSubTask    ?? input.task };
-    const financialInput:AgentInput = { ...input, task: financialSubTask ?? input.task };
+    const legalInput:     AgentInput = { ...input, task: legalSubTask     ?? input.task };
+    const financialInput: AgentInput = { ...input, task: financialSubTask ?? input.task };
 
     const [legalOut, financialOut] = await Promise.all([
       runLegalAgent(legalInput),
@@ -352,10 +389,10 @@ export async function orchestrate(input: AgentInput): Promise<OrchestrationResul
 
   return {
     taskClass,
-    agents:      outputs.map(o => o.agentName),
+    agents:       outputs.map(o => o.agentName),
     outputs,
     merged,
     totalTokens: outputs.reduce((s, o) => s + o.tokensUsed, 0),
-    durationMs:  Date.now() - start,
+    durationMs:   Date.now() - start,
   };
 }
