@@ -28,7 +28,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { withErrorHandler } from "@/lib/api-handler";
 import { getRequestContext, requireRole } from "@/lib/request-context";
 import { withTenant } from "@/db";
-import { auditLogs } from "@/db/schema";
+import {
+  limsyCases,
+  limsyHearings,
+  limsyOrders,
+  nidhivanProjects,
+  nidhivanDprs,
+  nidhivanBoqs,
+  nidhivanBoqItems,
+  nidhivanFinancialMetrics,
+  auditLogs,
+} from "@/db/schema";
+import { asc } from "drizzle-orm";
 import {
   orchestrate,
   type AgentInput,
@@ -50,55 +61,41 @@ interface OrchestrateRequest {
 // Hearing schedule is critical for urgency assessment by the Legal Agent.
 
 async function fetchLegalContext(tenantId: number): Promise<Record<string, unknown>> {
-  const { limsyCases, limsyHearings, limsyOrders } = await import("@/db/schema");
-  const { asc, eq, and, gte } = await import("drizzle-orm");
-
   return withTenant(tenantId, async (tx) => {
     const [cases, hearings, orders] = await Promise.all([
-
-      // All active cases — full detail for architect context
       tx.select({
-        id:               limsyCases.id,
-        internalRef:      limsyCases.internalRef,
-        caseType:         limsyCases.caseType,
-        status:           limsyCases.status,
-        courtLevel:       limsyCases.courtLevel,
-        courtName:        limsyCases.courtName,
-        petitioner:       limsyCases.petitioner,
-        respondent:       limsyCases.respondent,
-        subjectMatter:    limsyCases.subjectMatter,
-        reliefSought:     limsyCases.reliefSought,
-        urgencyFlag:      limsyCases.urgencyFlag,
-        nextHearingDate:  limsyCases.nextHearingDate,
-      }).from(limsyCases)
-        .orderBy(asc(limsyCases.id))
-        .limit(10),
+        id: limsyCases.id,
+        internalRef: limsyCases.internalRef,
+        caseType: limsyCases.caseType,
+        status: limsyCases.status,
+        courtLevel: limsyCases.courtLevel,
+        courtName: limsyCases.courtName,
+        petitioner: limsyCases.petitioner,
+        respondent: limsyCases.respondent,
+        subjectMatter: limsyCases.subjectMatter,
+        urgencyFlag: limsyCases.urgencyFlag,
+        nextHearingDate: limsyCases.nextHearingDate,
+      }).from(limsyCases).orderBy(asc(limsyCases.id)).limit(10),
 
-      // Upcoming hearings — ordered by date so agent sees next listed matters first
       tx.select({
-        id:               limsyHearings.id,
-        caseId:           limsyHearings.caseId,
-        hearingNumber:    limsyHearings.hearingNumber,
-        status:           limsyHearings.status,
-        scheduledDate:    limsyHearings.scheduledDate,
-        courtRoom:        limsyHearings.courtRoom,
+        id: limsyHearings.id,
+        caseId: limsyHearings.caseId,
+        hearingNumber: limsyHearings.hearingNumber,
+        status: limsyHearings.status,
+        scheduledDate: limsyHearings.scheduledDate,
+        courtRoom: limsyHearings.courtRoom,
         adjournmentCount: limsyHearings.adjournmentCount,
-      }).from(limsyHearings)
-        .orderBy(asc(limsyHearings.scheduledDate))
-        .limit(10),
+      }).from(limsyHearings).orderBy(asc(limsyHearings.scheduledDate)).limit(10),
 
-      // Sealed court orders — includes operative text and SHA-256 hash
       tx.select({
-        id:         limsyOrders.id,
-        caseId:     limsyOrders.caseId,
-        orderType:  limsyOrders.orderType,
+        id: limsyOrders.id,
+        caseId: limsyOrders.caseId,
+        orderType: limsyOrders.orderType,
         orderTitle: limsyOrders.orderTitle,
-        operative:  limsyOrders.operative,
-        orderDate:  limsyOrders.orderDate,
+        operative: limsyOrders.operative,
+        orderDate: limsyOrders.orderDate,
         cryptoHash: limsyOrders.cryptoHash,
-      }).from(limsyOrders)
-        .orderBy(asc(limsyOrders.id))
-        .limit(5),
+      }).from(limsyOrders).orderBy(asc(limsyOrders.id)).limit(5),
     ]);
 
     return { cases, hearings, orders, tenantId };
@@ -109,15 +106,6 @@ async function fetchLegalContext(tenantId: number): Promise<Record<string, unkno
 // Fetches all Nidhivan financial data for the tenant including BOQ aggregates.
 
 async function fetchFinancialContext(tenantId: number): Promise<Record<string, unknown>> {
-  const {
-    nidhivanProjects,
-    nidhivanDprs,
-    nidhivanBoqs,
-    nidhivanBoqItems,
-    nidhivanFinancialMetrics,
-  } = await import("@/db/schema");
-  const { asc } = await import("drizzle-orm");
-
   return withTenant(tenantId, async (tx) => {
     const [projects, dprs, boqs, items, metrics] = await Promise.all([
       tx.select().from(nidhivanProjects).orderBy(asc(nidhivanProjects.id)).limit(5),
@@ -127,7 +115,6 @@ async function fetchFinancialContext(tenantId: number): Promise<Record<string, u
       tx.select().from(nidhivanFinancialMetrics).orderBy(asc(nidhivanFinancialMetrics.id)).limit(5),
     ]);
 
-    // Aggregate BOQ total in paise — explicit types for TypeScript strict mode
     const boqTotalPaise = items.reduce(
       (sum: number, i: { amountPaise?: number | string | null }) =>
         sum + Number(i.amountPaise ?? 0),
@@ -143,7 +130,7 @@ async function fetchFinancialContext(tenantId: number): Promise<Record<string, u
       aggregate: {
         totalItemCount: items.length,
         boqTotalPaise,
-        boqTotalCrore:  (boqTotalPaise / 1_000_000_000).toFixed(2),
+        boqTotalCrore: (boqTotalPaise / 1_000_000_000).toFixed(2),
       },
       tenantId,
     };
@@ -200,13 +187,20 @@ async function _POST(req: NextRequest) {
     }
   }
 
-  // Run multi-agent orchestration with explicit error logging for debugging
+  // Run multi-agent orchestration with explicit debug payload return on error
   let result;
   try {
     result = await orchestrate({ task, contextData, context: agentCtx });
   } catch (err: any) {
-    console.error("[Orchestrate Execution Error]:", err?.message || err);
-    throw err;
+    console.error("[Orchestrate Execution Error Detail]:", err);
+    return NextResponse.json(
+      { 
+        error: err?.message || "Internal server error during orchestration", 
+        stack: err?.stack,
+        cause: err?.cause 
+      },
+      { status: 500 }
+    );
   }
 
   // Write audit log for each agent that ran
