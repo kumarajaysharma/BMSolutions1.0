@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect } from "react"
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
@@ -27,7 +29,7 @@ const BOQ_ITEMS = [
   { sno:1, desc:'Earthwork in excavation — roadway cutting (GSB)',                unit:'cum', qty:4500.50, rate:185.00,   cat:'Earthworks'  },
   { sno:2, desc:'Granular sub-base (GSB) — 200mm compacted layer',                unit:'sqm', qty:1200.00, rate:310.00,   cat:'Pavement'    },
   { sno:3, desc:'Dense bituminous macadam (DBM) — 75mm — MORTH Cl. 507',          unit:'sqm', qty:1200.00, rate:590.00,   cat:'Pavement'    },
-  { sno:4, desc:'RCC box culvert — 2m × 2m, M35 grade — CPWD Specification',     unit:'rm',  qty:  90.25, rate:28500.00, cat:'Structures'  },
+  { sno:4, desc:'RCC box culvert — 2m × 2m, M35 grade — CPWD Specification',      unit:'rm',  qty:  90.25, rate:28500.00, cat:'Structures'  },
   { sno:5, desc:'Hot mix plant — asphalt concrete wearing course 40mm',           unit:'sqm', qty:1200.00, rate:420.00,   cat:'Pavement'    },
 ]
 
@@ -51,13 +53,13 @@ const SC = {
   approved:     { color:'#10B981', bg:'#071510', label:'APPROVED'     },
 }
 
-const fmt = n => new Intl.NumberFormat('en-IN').format(Math.round(n))
+const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(Math.round(n))
 const base     = BOQ_ITEMS.reduce((s,i) => s + i.qty * i.rate * 100, 0)
 const cont     = Math.round(base * 0.05)
 const ovhd     = Math.round(base * 0.08)
 const gst      = Math.round((base + cont + ovhd) * 0.18)
 const grand    = base + cont + ovhd + gst
-const L = v => (v / 10_000_000).toFixed(2)
+const L = (v: number) => (v / 10_000_000).toFixed(2)
 
 export default function NidhivanDPR() {
   const [tab, setTab]   = useState('dashboard')
@@ -71,7 +73,7 @@ export default function NidhivanDPR() {
     lk.rel = 'stylesheet'
     lk.href = 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700&display=swap'
     document.head.appendChild(lk)
-    return () => document.head.removeChild(lk)
+    return () => { document.head.removeChild(lk); }
   }, [])
 
   const genNarr = async () => {
@@ -109,8 +111,9 @@ INVESTOR RECOMMENDATION: [One decisive sentence — proceed/strong buy with spec
     setGen(false); setDone(true)
   }
 
+  const TAB_LABELS: Record<string, string> = { dashboard:'DASHBOARD', boq:'BOQ ENGINE', financials:'FINANCIALS', pipeline:'DPR PIPELINE' }
   const TABS = ['dashboard','boq','financials','pipeline'].map(id => ({
-    id, label: { dashboard:'DASHBOARD', boq:'BOQ ENGINE', financials:'FINANCIALS', pipeline:'DPR PIPELINE' }[id]
+    id, label: TAB_LABELS[id]
   }))
 
   return (
@@ -242,13 +245,15 @@ INVESTOR RECOMMENDATION: [One decisive sentence — proceed/strong buy with spec
                 <div style={{ fontFamily:C.mono, fontSize:10, color:C.gold, fontWeight:700 }}>₹{L(it.qty*it.rate*100)}L</div>
               </div>
             ))}
-            {[
-              ['Base Estimate',              base,  C.text, false],
-              ['Contingency (5%)',           cont,  C.sub,  false],
-              ['Overhead & Supervision (8%)',ovhd,  C.sub,  false],
-              ['GST @ 18%',                  gst,   C.warn, false],
-              ['Grand Total',                grand, C.gold, true ],
-            ].map(([l,v,c,bold],i) => (
+            {(
+              [
+                ['Base Estimate',               base,  C.text, false],
+                ['Contingency (5%)',            cont,  C.sub,  false],
+                ['Overhead & Supervision (8%)', ovhd,  C.sub,  false],
+                ['GST @ 18%',                   gst,   C.warn, false],
+                ['Grand Total',                 grand, C.gold, true ],
+              ] as [string, number, string, boolean][]
+            ).map(([l, v, c, bold]) => (
               <div key={l} style={{ display:'grid', gridTemplateColumns:'1fr 110px', padding:'10px 14px', borderTop:`1px solid ${C.border}`, background: bold ? C.navy : C.surface, alignItems:'center' }}>
                 <div style={{ fontFamily:C.mono, fontSize: bold?10:9, color:c, fontWeight: bold?700:400 }}>{l}</div>
                 <div style={{ fontFamily:C.mono, fontSize: bold?11:10, color:c, fontWeight: bold?700:400 }}>₹{L(v)}L</div>
@@ -277,7 +282,7 @@ INVESTOR RECOMMENDATION: [One decisive sentence — proceed/strong buy with spec
               {[
                 { l:'Project IRR',        v:`${METRICS.irr}%`,   n:'vs. 10% benchmark → +420 bps', c:C.success },
                 { l:'Equity IRR (est.)',  v:'17.8%',             n:'3× leverage at 8.5% debt cost', c:C.success },
-                { l:'NPV (₹ Crore)',      v:`₹${METRICS.npvCrore} Cr`, n:'WACC: 9.2%',            c:C.info    },
+                { l:'NPV (₹ Crore)',      v:`₹${METRICS.npvCrore} Cr`, n:'WACC: 9.2%',             c:C.info    },
                 { l:'Payback Period',     v:`${METRICS.payback} yrs`, n:'Concession: 25 years',   c:C.warn    },
                 { l:'DSCR (Average)',     v:'1.42×',             n:'Min DSCR: 1.18× (Year 3)',     c:C.success },
               ].map((r,i) => (
@@ -345,7 +350,7 @@ INVESTOR RECOMMENDATION: [One decisive sentence — proceed/strong buy with spec
             <div style={{ fontSize:11, color:C.sub, lineHeight:1.6 }}>DPR-NH44-01 is in review (highest IRR: 14.2%). Remaining 3 are in draft — BOQ data complete. DPR-RAIL-01 pending structural survey data. Unblocking all 5 releases ₹23,950 Crore in infrastructure capital.</div>
           </div>
           {DPR_LIST.map((d,i) => {
-            const s = SC[d.status]
+            const s = SC[d.status as keyof typeof SC]
             return (
               <div key={i} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:16, marginBottom:10, display:'flex', alignItems:'center', gap:14 }}>
                 <div style={{ background:s.bg, border:`1px solid ${s.color}40`, borderRadius:6, padding:'4px 10px', fontFamily:C.mono, fontSize:8, color:s.color, fontWeight:700, letterSpacing:'0.08em', flexShrink:0, whiteSpace:'nowrap' }}>{s.label}</div>
@@ -367,14 +372,14 @@ INVESTOR RECOMMENDATION: [One decisive sentence — proceed/strong buy with spec
             <div style={{ fontFamily:C.mono, fontSize:8, color:C.gold, fontWeight:700, letterSpacing:'0.12em', marginBottom:10 }}>TRACK B COMPLETION STATUS</div>
             {[
               ['✓','DB schema — nidhivan_boqs, nidhivan_boq_items, nidhivan_dprs, nidhivan_financial_metrics', C.success],
-              ['✓','RLS isolation — bms cannot read nidhivan data (ATP RLS-005 PASS)',                          C.success],
-              ['✓','Seed data — NH-44 project, DPR, BOQ (5 CPWD DSR items), financial metrics',               C.success],
+              ['✓','RLS isolation — bms cannot read nidhivan data (ATP RLS-005 PASS)',                           C.success],
+              ['✓','Seed data — NH-44 project, DPR, BOQ (5 CPWD DSR items), financial metrics',                C.success],
               ['▶','PDF pipeline — @react-pdf/renderer DPR template → investor-grade branded PDF',             C.warn   ],
               ['▶','API routes — GET /api/nidhivan/dprs, /boqs, /boq-items — expose to frontend',              C.warn   ],
               ['▶','Multi-agent AI — Claude drafts DPR narrative sections from live BOQ + metrics data',       C.info   ],
             ].map(([ic,tx,c],i) => (
               <div key={i} style={{ display:'flex', gap:10, padding:'6px 0', borderBottom: i<5 ? `1px solid ${C.border}` : 'none', alignItems:'center' }}>
-                <span style={{ fontFamily:C.mono, fontSize:10, color:c, flexShrink:0 }}>{ic}</span>
+                <span style={{ fontFamily:C.mono, fontSize:10, color:c as string, flexShrink:0 }}>{ic}</span>
                 <span style={{ fontSize:11, color:C.sub, lineHeight:1.4 }}>{tx}</span>
               </div>
             ))}
