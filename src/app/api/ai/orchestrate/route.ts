@@ -41,8 +41,8 @@ export const runtime  = "nodejs"; // generateText requires Node.js runtime
 // ── Request schema ─────────────────────────────────────────────────────────────
 
 interface OrchestrateRequest {
-  task:         string;                       // Natural language task description
-  contextData?: Record<string, unknown>;      // Optional pre-fetched domain data
+  task:          string;                     // Natural language task description
+  contextData?: Record<string, unknown>;     // Optional pre-fetched domain data
 }
 
 // ── Legal context fetcher ──────────────────────────────────────────────────────
@@ -58,30 +58,30 @@ async function fetchLegalContext(tenantId: number): Promise<Record<string, unkno
 
       // All active cases — full detail for architect context
       tx.select({
-        id:             limsyCases.id,
-        internalRef:    limsyCases.internalRef,
-        caseType:       limsyCases.caseType,
-        status:         limsyCases.status,
-        courtLevel:     limsyCases.courtLevel,
-        courtName:      limsyCases.courtName,
-        petitioner:     limsyCases.petitioner,
-        respondent:     limsyCases.respondent,
-        subjectMatter:  limsyCases.subjectMatter,
-        reliefSought:   limsyCases.reliefSought,
-        urgencyFlag:    limsyCases.urgencyFlag,
-        nextHearingDate:limsyCases.nextHearingDate,
+        id:               limsyCases.id,
+        internalRef:      limsyCases.internalRef,
+        caseType:         limsyCases.caseType,
+        status:           limsyCases.status,
+        courtLevel:       limsyCases.courtLevel,
+        courtName:        limsyCases.courtName,
+        petitioner:       limsyCases.petitioner,
+        respondent:       limsyCases.respondent,
+        subjectMatter:    limsyCases.subjectMatter,
+        reliefSought:     limsyCases.reliefSought,
+        urgencyFlag:      limsyCases.urgencyFlag,
+        nextHearingDate:  limsyCases.nextHearingDate,
       }).from(limsyCases)
         .orderBy(asc(limsyCases.id))
         .limit(10),
 
       // Upcoming hearings — ordered by date so agent sees next listed matters first
       tx.select({
-        id:             limsyHearings.id,
-        caseId:         limsyHearings.caseId,
-        hearingNumber:  limsyHearings.hearingNumber,
-        status:         limsyHearings.status,
-        scheduledDate:  limsyHearings.scheduledDate,
-        courtRoom:      limsyHearings.courtRoom,
+        id:               limsyHearings.id,
+        caseId:           limsyHearings.caseId,
+        hearingNumber:    limsyHearings.hearingNumber,
+        status:           limsyHearings.status,
+        scheduledDate:    limsyHearings.scheduledDate,
+        courtRoom:        limsyHearings.courtRoom,
         adjournmentCount: limsyHearings.adjournmentCount,
       }).from(limsyHearings)
         .orderBy(asc(limsyHearings.scheduledDate))
@@ -200,8 +200,14 @@ async function _POST(req: NextRequest) {
     }
   }
 
-  // Run multi-agent orchestration
-  const result = await orchestrate({ task, contextData, context: agentCtx });
+  // Run multi-agent orchestration with explicit error logging for debugging
+  let result;
+  try {
+    result = await orchestrate({ task, contextData, context: agentCtx });
+  } catch (err: any) {
+    console.error("[Orchestrate Execution Error]:", err?.message || err);
+    throw err;
+  }
 
   // Write audit log for each agent that ran
   const ip =
@@ -224,10 +230,10 @@ async function _POST(req: NextRequest) {
   });
 
   return NextResponse.json({
-    success:     true,
-    taskClass:   result.taskClass,
-    agents:      result.agents,
-    outputs:     result.outputs.map(o => ({
+    success:       true,
+    taskClass:     result.taskClass,
+    agents:        result.agents,
+    outputs:       result.outputs.map(o => ({
       agentName:  o.agentName,
       taskClass:  o.taskClass,
       content:    o.content,
@@ -235,9 +241,9 @@ async function _POST(req: NextRequest) {
       tokensUsed: o.tokensUsed,
       durationMs: o.durationMs,
     })),
-    merged:      result.merged ?? null,
-    totalTokens: result.totalTokens,
-    durationMs:  result.durationMs,
+    merged:        result.merged ?? null,
+    totalTokens:   result.totalTokens,
+    durationMs:    result.durationMs,
   });
 }
 
