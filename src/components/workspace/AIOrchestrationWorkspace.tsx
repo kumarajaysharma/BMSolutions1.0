@@ -65,9 +65,9 @@ const PRESETS = [
 
 const DOMAIN_STYLE = {
   LEGAL:    { color: C.legal,  label: 'LEGAL AGENT',     icon: '⚖' },
-  FINANCIAL:{ color: C.fin,    label: 'FINANCIAL AGENT',  icon: '₹' },
-  HYBRID:   { color: C.hybrid, label: 'DUAL AGENT',       icon: '⇄' },
-  UNKNOWN:  { color: C.muted,  label: 'UNKNOWN',           icon: '?' },
+  FINANCIAL:{ color: C.fin,    label: 'FINANCIAL AGENT', icon: '₹' },
+  HYBRID:   { color: C.hybrid, label: 'DUAL AGENT',      icon: '⇄' },
+  UNKNOWN:  { color: C.muted,  label: 'UNKNOWN',         icon: '?' },
 }
 
 const AGENT_STYLE = {
@@ -76,8 +76,8 @@ const AGENT_STYLE = {
   orchestrator: { color: C.hybrid, icon: '⇄', title: 'BNLV AI Orchestrator'                     },
 }
 
-function AgentCard({ output, index }) {
-  const as = AGENT_STYLE[output.agentName] || AGENT_STYLE.orchestrator
+function AgentCard({ output, index }: { output: any, index: number }) {
+  const as = AGENT_STYLE[output.agentName as keyof typeof AGENT_STYLE] || AGENT_STYLE.orchestrator
   const sections = output.content.split(/\n(?=[A-Z ]+:)/g).filter(Boolean)
 
   return (
@@ -112,7 +112,7 @@ function AgentCard({ output, index }) {
 
       {/* Output content */}
       <div style={{ padding: 16 }}>
-        {sections.map((section, i) => {
+        {sections.map((section: string, i: number) => {
           const colonIdx = section.indexOf(':')
           if (colonIdx === -1) {
             return (
@@ -140,18 +140,18 @@ function AgentCard({ output, index }) {
 export default function AIOrchestrationWorkspace() {
   const [task, setTask]         = useState('')
   const [running, setRunning]   = useState(false)
-  const [result, setResult]     = useState(null)
+  const [result, setResult]     = useState<any>(null)
   const [error, setError]       = useState('')
-  const [history, setHistory]   = useState([])
+  const [history, setHistory]   = useState<any[]>([])
   const [tab, setTab]           = useState('console')
-  const outputRef               = useRef(null)
+  const outputRef               = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const lk = document.createElement('link')
     lk.rel   = 'stylesheet'
     lk.href  = 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600&display=swap'
     document.head.appendChild(lk)
-    return () => document.head.removeChild(lk)
+    return () => { document.head.removeChild(lk); }
   }, [])
 
   useEffect(() => {
@@ -160,7 +160,7 @@ export default function AIOrchestrationWorkspace() {
     }
   }, [result])
 
-  const runOrchestration = async (taskText) => {
+  const runOrchestration = async (taskText?: string) => {
     const t = taskText || task
     if (!t.trim() || t.trim().length < 10) { setError('Task must be at least 10 characters.'); return }
     setRunning(true); setResult(null); setError('')
@@ -184,8 +184,8 @@ export default function AIOrchestrationWorkspace() {
       catch {}
 
       const { taskClass } = classification
-      const ds = DOMAIN_STYLE[taskClass] || DOMAIN_STYLE.UNKNOWN
-      const outputs = []
+      const ds = DOMAIN_STYLE[taskClass as keyof typeof DOMAIN_STYLE] || DOMAIN_STYLE.UNKNOWN
+      const outputs: any[] = []
 
       // Legal agent
       if (taskClass === 'LEGAL' || taskClass === 'HYBRID') {
@@ -259,13 +259,13 @@ CAPITAL RAISING RECOMMENDATION:`,
       setResult(r)
       setHistory(h => [r, ...h].slice(0, 10))
       setTask('')
-    } catch (e) {
+    } catch (e: any) {
       setError(`Orchestration error: ${e?.message || 'Unknown error'}`)
     }
     setRunning(false)
   }
 
-  const ds = result ? (DOMAIN_STYLE[result.taskClass] || DOMAIN_STYLE.UNKNOWN) : null
+  const ds = result ? (DOMAIN_STYLE[result.taskClass as keyof typeof DOMAIN_STYLE] || DOMAIN_STYLE.UNKNOWN) : null
 
   return (
     <div style={{ fontFamily: C.sans, background: C.bg, color: C.text, minHeight: '100vh' }}>
@@ -366,16 +366,16 @@ CAPITAL RAISING RECOMMENDATION:`,
             {result && !running && (
               <div ref={outputRef}>
                 {/* Classification banner */}
-                <div style={{ background: `${DOMAIN_STYLE[result.taskClass]?.color}15`,
-                  border: `1px solid ${DOMAIN_STYLE[result.taskClass]?.color}35`,
+                <div style={{ background: `${ds?.color}15`,
+                  border: `1px solid ${ds?.color}35`,
                   borderRadius: 10, padding: '10px 16px', marginBottom: 14,
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 16 }}>{DOMAIN_STYLE[result.taskClass]?.icon}</span>
+                    <span style={{ fontSize: 16 }}>{ds?.icon}</span>
                     <div>
-                      <div style={{ fontFamily: C.mono, fontSize: 10, color: DOMAIN_STYLE[result.taskClass]?.color,
+                      <div style={{ fontFamily: C.mono, fontSize: 10, color: ds?.color,
                         fontWeight: 700, letterSpacing: '0.12em' }}>
-                        {DOMAIN_STYLE[result.taskClass]?.label} — {result.taskClass} TASK
+                        {ds?.label} — {result.taskClass} TASK
                       </div>
                       <div style={{ fontFamily: C.mono, fontSize: 8, color: C.muted, marginTop: 1 }}>
                         {result.agents.join(' + ')} · {result.totalTokens} tokens · {result.durationMs}ms
@@ -388,7 +388,7 @@ CAPITAL RAISING RECOMMENDATION:`,
                 </div>
 
                 {/* Agent outputs */}
-                {result.outputs.map((o, i) => <AgentCard key={i} output={o} index={i} />)}
+                {result.outputs.map((o: any, i: number) => <AgentCard key={i} output={o} index={i} />)}
 
                 {/* Hybrid merged brief */}
                 {result.merged && (
@@ -415,7 +415,7 @@ CAPITAL RAISING RECOMMENDATION:`,
               </div>
             </div>
             {PRESETS.map((p, i) => {
-              const ds = DOMAIN_STYLE[p.domain]
+              const ds = DOMAIN_STYLE[p.domain as keyof typeof DOMAIN_STYLE]
               return (
                 <div key={i} style={{ background: C.card, border: `1px solid ${C.border}`,
                   borderRadius: 10, padding: 16, marginBottom: 10 }}>
@@ -460,7 +460,7 @@ CAPITAL RAISING RECOMMENDATION:`,
                 <div style={{ fontFamily: C.mono, fontSize: 9, color: C.muted }}>Use the Console or Presets tab to run your first agent task</div>
               </div>
             ) : history.map((r, i) => {
-              const ds = DOMAIN_STYLE[r.taskClass] || DOMAIN_STYLE.UNKNOWN
+              const ds = DOMAIN_STYLE[r.taskClass as keyof typeof DOMAIN_STYLE] || DOMAIN_STYLE.UNKNOWN
               return (
                 <div key={i} style={{ background: C.card, border: `1px solid ${C.border}`,
                   borderRadius: 10, padding: 14, marginBottom: 10, cursor: 'pointer' }}
