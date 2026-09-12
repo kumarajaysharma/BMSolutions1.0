@@ -118,7 +118,7 @@ const TESTS = [
   { id:'LC-003', sec:'LIMSY Cases API', sev:'HIGH', name:'POST — invalid courtLevel enum → 400 before DB round-trip',
     pre:'P-ARCHITECT authenticated.',
     steps:["POST /api/limsy/cases with courtLevel: 'municipal_court' (not in VALID_COURT_LEVELS)",'Verify HTTP 400 (pre-flight validation, before DB call)','Verify error lists all valid VALID_COURT_LEVELS values'],
-    pass:'HTTP 400. Complete valid enum list in error body. No PG 23514 constraint violation.',
+    pass:'HTTP 400. Complete valid enum list in error. No PG 23514 constraint violation.',
     fail:'HTTP 500 from PostgreSQL enum error. HTTP 201 with invalid enum stored.' },
   { id:'LC-004', sec:'LIMSY Cases API', sev:'HIGH', name:'GET — developer role receives projected fields only (CR-003)',
     pre:'CR-003 fix deployed. P-DEVELOPER session active on limsy. At least one case record exists.',
@@ -353,32 +353,32 @@ const ST_STYLE = {
 }
 
 export default function ATPTracker() {
-  const [results, setResults]       = useState({})
+  const [results, setResults]       = useState<Record<string, any>>({})
   const [activeSection, setSection] = useState(SECTIONS[0])
-  const [expandedId, setExpanded]   = useState(null)
+  const [expandedId, setExpanded]   = useState<string | null>(null)
   const [loading, setLoading]       = useState(true)
   const [saveLabel, setSaveLabel]   = useState('auto-saved')
 
   useEffect(() => {
-    async function load() {
+    function load() {
       try {
-        const r = await window.storage.get('bnlv-atp-v3')
-        if (r) setResults(JSON.parse(r.value))
+        const r = window.localStorage.getItem('bnlv-atp-v3')
+        if (r) setResults(JSON.parse(r))
       } catch {}
       setLoading(false)
     }
     load()
   }, [])
 
-  const persist = async (updated) => {
+  const persist = (updated: Record<string, any>) => {
     setSaveLabel('saving…')
     try {
-      await window.storage.set('bnlv-atp-v3', JSON.stringify(updated))
+      window.localStorage.setItem('bnlv-atp-v3', JSON.stringify(updated))
       setSaveLabel('saved')
     } catch { setSaveLabel('save error') }
   }
 
-  const setStatus = (id, s) => {
+  const setStatus = (id: string, s: string) => {
     const cur = results[id]?.status
     const next = cur === s ? undefined : s
     const updated = { ...results, [id]: { ...(results[id] || {}), status: next } }
@@ -386,7 +386,7 @@ export default function ATPTracker() {
     persist(updated)
   }
 
-  const setNotes = (id, notes) => {
+  const setNotes = (id: string, notes: string) => {
     const updated = { ...results, [id]: { ...(results[id] || {}), notes } }
     setResults(updated)
     persist(updated)
@@ -403,7 +403,7 @@ export default function ATPTracker() {
   const gateColor = bcF > 0 ? 'var(--text-danger)' : gate === 'GO' ? 'var(--text-success)' : 'var(--text-warning)'
   const gateBg    = bcF > 0 ? 'var(--bg-danger)'   : gate === 'GO' ? 'var(--bg-success)'   : 'var(--bg-warning)'
 
-  const secStat = sec => {
+  const secStat = (sec: string) => {
     const ts = TESTS.filter(t => t.sec === sec)
     return { total: ts.length, pass: ts.filter(t => results[t.id]?.status==='PASS').length, fail: ts.filter(t => results[t.id]?.status==='FAIL').length }
   }
@@ -486,8 +486,8 @@ export default function ATPTracker() {
         {activeTests.map(test => {
           const r   = results[test.id] || {}
           const st  = r.status || 'PENDING'
-          const stS = ST_STYLE[st]
-          const svS = SEV_STYLE[test.sev]
+          const stS = ST_STYLE[st as keyof typeof ST_STYLE] || ST_STYLE['PENDING']
+          const svS = SEV_STYLE[test.sev as keyof typeof SEV_STYLE]
           const exp = expandedId === test.id
 
           return (
@@ -516,7 +516,7 @@ export default function ATPTracker() {
                 {/* Status buttons */}
                 <div style={{ display:'flex', gap:3, flexShrink:0 }}>
                   {STATUSES.map(s => {
-                    const sc  = ST_STYLE[s]
+                    const sc  = ST_STYLE[s as keyof typeof ST_STYLE]
                     const sel = st === s
                     return (
                       <button key={s} onClick={() => setStatus(test.id, s)} style={{
@@ -593,4 +593,3 @@ export default function ATPTracker() {
     </div>
   )
 }
-

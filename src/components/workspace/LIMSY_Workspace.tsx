@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react"
+"use client";
+
+import { useState, useEffect, ReactNode } from "react"
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
@@ -81,45 +83,47 @@ const COURT_LEVELS = ['supreme_court','high_court','district_court','tribunal','
 const CASE_TYPES   = ['slp','writ_petition','civil_appeal','criminal_appeal','review_petition','curative_petition','original_suit','execution_petition','consumer_complaint','arbitration_petition','ibc_petition','nclt_petition','other']
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const Label = ({ children }) => (
+const Label = ({ children }: { children: ReactNode }) => (
   <div style={{ fontFamily: C.mono, fontSize: 8, color: C.gold, fontWeight: 700,
     letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 5 }}>
     {children}
   </div>
 )
-const Field = ({ value, onChange, placeholder, type = 'text' }) => (
+
+const Field = ({ value, onChange, placeholder, type = 'text' }: { value: string, onChange: (v: string) => void, placeholder?: string, type?: string }) => (
   <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
     style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7,
       padding: '8px 11px', color: C.text, fontSize: 12, fontFamily: C.sans,
       outline: 'none', boxSizing: 'border-box' }} />
 )
-const Select = ({ value, onChange, options }) => (
+
+const Select = ({ value, onChange, options }: { value: string, onChange: (v: string) => void, options: string[] }) => (
   <select value={value} onChange={e => onChange(e.target.value)}
     style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7,
       padding: '8px 11px', color: C.text, fontSize: 12, fontFamily: C.sans,
       outline: 'none', boxSizing: 'border-box' }}>
-    {options.map(o => <option key={o} value={o}>{o.replace(/_/g, ' ')}</option>)}
+    {options.map((o: string) => <option key={o} value={o}>{o.replace(/_/g, ' ')}</option>)}
   </select>
 )
 
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function LIMSYWorkspace() {
   const [tab, setTab]           = useState('command')
-  const [docket, setDocket]     = useState([])
+  const [docket, setDocket]     = useState<any[]>([])
   const [loading, setLoading]   = useState(true)
 
   // Intake form
   const blank = { ref:'', court:'', courtLevel:'supreme_court', caseType:'slp',
                   petitioner:'', respondent:'', subject:'', urgency: false }
   const [form, setForm]         = useState(blank)
-  const upd = (k, v)            => setForm(f => ({ ...f, [k]: v }))
+  const upd = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }))
 
   // AI synopsis
   const [synopsis, setSynopsis] = useState('')
   const [aiLoading, setAiLoad]  = useState(false)
 
   // Vault
-  const [sealId, setSealId]     = useState(null)
+  const [sealId, setSealId]     = useState<number | null>(null)
   const [sealing, setSealing]   = useState(false)
 
   // Persist docket
@@ -128,17 +132,22 @@ export default function LIMSYWorkspace() {
     link.rel = 'stylesheet'
     link.href = 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700&display=swap'
     document.head.appendChild(link)
-    async function load() {
-      try { const r = await window.storage.get('limsy-docket-v2'); if (r) setDocket(JSON.parse(r.value)) }
+    
+    function load() {
+      try { 
+        const r = window.localStorage.getItem('limsy-docket-v2'); 
+        if (r) setDocket(JSON.parse(r)) 
+      }
       catch {}
       setLoading(false)
     }
     load()
-    return () => document.head.removeChild(link)
+    
+    return () => { document.head.removeChild(link); }
   }, [])
 
-  const persist = async (d) => {
-    try { await window.storage.set('limsy-docket-v2', JSON.stringify(d)) } catch {}
+  const persist = (d: any[]) => {
+    try { window.localStorage.setItem('limsy-docket-v2', JSON.stringify(d)) } catch {}
   }
 
   // AI synopsis generation
@@ -192,7 +201,7 @@ PRELIMINARY ASSESSMENT: [Prima facie strength, urgency, maintainability, whether
   }
 
   // Load pending into form
-  const loadPending = (p) => {
+  const loadPending = (p: any) => {
     setForm({ ref: p.ref, court: p.court, courtLevel: p.courtLevel, caseType: p.caseType,
               petitioner: p.petitioner, respondent: p.respondent, subject: p.subject, urgency: p.urgency === 'CRITICAL' })
     setSynopsis('')
@@ -200,7 +209,7 @@ PRELIMINARY ASSESSMENT: [Prima facie strength, urgency, maintainability, whether
   }
 
   // Hash verification
-  const verifySeal = async (id) => {
+  const verifySeal = async (id: number) => {
     setSealing(true)
     await new Promise(r => setTimeout(r, 1400))
     setSealId(id); setSealing(false)
@@ -297,7 +306,7 @@ PRELIMINARY ASSESSMENT: [Prima facie strength, urgency, maintainability, whether
                 IMMEDIATE ACTION — PENDING INTAKE BACKLOG
               </div>
             </div>
-            {BACKLOG.map((p, i) => (
+            {BACKLOG.map((p: any, i: number) => (
               <div key={i} style={{
                 background: C.card,
                 border: `1px solid ${p.urgency === 'CRITICAL' ? C.danger + '40' : C.warn + '35'}`,
@@ -389,10 +398,10 @@ PRELIMINARY ASSESSMENT: [Prima facie strength, urgency, maintainability, whether
             <div style={{ fontFamily: C.mono, fontSize: 9, color: C.gold, fontWeight: 700,
               letterSpacing: '0.16em', marginBottom: 16 }}>I. CASE IDENTIFICATION</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <div><Label>Internal Reference</Label><Field value={form.ref} onChange={v => upd('ref',v)} placeholder="LIMSY-2026-001" /></div>
-              <div><Label>Court Name</Label><Field value={form.court} onChange={v => upd('court',v)} placeholder="Supreme Court of India" /></div>
-              <div><Label>Court Level</Label><Select value={form.courtLevel} onChange={v => upd('courtLevel',v)} options={COURT_LEVELS} /></div>
-              <div><Label>Case Type</Label><Select value={form.caseType} onChange={v => upd('caseType',v)} options={CASE_TYPES} /></div>
+              <div><Label>Internal Reference</Label><Field value={form.ref} onChange={(v: string) => upd('ref',v)} placeholder="LIMSY-2026-001" /></div>
+              <div><Label>Court Name</Label><Field value={form.court} onChange={(v: string) => upd('court',v)} placeholder="Supreme Court of India" /></div>
+              <div><Label>Court Level</Label><Select value={form.courtLevel} onChange={(v: string) => upd('courtLevel',v)} options={COURT_LEVELS} /></div>
+              <div><Label>Case Type</Label><Select value={form.caseType} onChange={(v: string) => upd('caseType',v)} options={CASE_TYPES} /></div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
               <input type="checkbox" id="urgency" checked={form.urgency} onChange={e => upd('urgency', e.target.checked)}
@@ -409,11 +418,11 @@ PRELIMINARY ASSESSMENT: [Prima facie strength, urgency, maintainability, whether
               letterSpacing: '0.16em', marginBottom: 16 }}>II. PARTIES</div>
             <div style={{ marginBottom: 12 }}>
               <Label>Petitioner / Appellant</Label>
-              <Field value={form.petitioner} onChange={v => upd('petitioner',v)} placeholder="State of Maharashtra" />
+              <Field value={form.petitioner} onChange={(v: string) => upd('petitioner',v)} placeholder="State of Maharashtra" />
             </div>
             <div>
               <Label>Respondent / Opposite Party</Label>
-              <Field value={form.respondent} onChange={v => upd('respondent',v)} placeholder="Union of India" />
+              <Field value={form.respondent} onChange={(v: string) => upd('respondent',v)} placeholder="Union of India" />
             </div>
           </div>
 
@@ -506,7 +515,7 @@ PRELIMINARY ASSESSMENT: [Prima facie strength, urgency, maintainability, whether
                 cursor: 'pointer', letterSpacing: '0.1em',
               }}>VIEW PENDING CASES →</button>
             </div>
-          ) : docket.map((c) => (
+          ) : docket.map((c: any) => (
             <div key={c.id} style={{ background: C.card, border: `1px solid ${c.urgency ? C.warn+'50' : C.border}`,
               borderRadius: 10, padding: 16, marginBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -556,7 +565,7 @@ PRELIMINARY ASSESSMENT: [Prima facie strength, urgency, maintainability, whether
             </div>
           </div>
 
-          {SEALED_ORDERS.map(o => {
+          {SEALED_ORDERS.map((o: any) => {
             const verified = sealId === o.id
             return (
               <div key={o.id} style={{
