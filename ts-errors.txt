@@ -1,0 +1,23 @@
+
+> typecheck
+> tsc --noEmit
+
+src/app/api/bms/hosting/containers/route.ts(9,28): error TS2307: Cannot find module '@/lib/tenant' or its corresponding type declarations.
+src/app/api/bms/hosting/containers/route.ts(32,56): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+src/app/api/bms/hosting/containers/route.ts(53,57): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+src/app/api/bms/lms/courses/route.ts(9,28): error TS2307: Cannot find module '@/lib/tenant' or its corresponding type declarations.
+src/app/api/bms/lms/courses/route.ts(35,53): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+src/app/api/bms/lms/courses/route.ts(58,56): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+src/app/api/bms/lms/courses/route.ts(65,9): error TS2367: This comparison appears to be unintentional because the types '{ code: string; detail?: string | undefined; } | null' and 'string' have no overlap.
+src/app/api/bms/lms/enrollments/route.ts(8,28): error TS2307: Cannot find module '@/lib/tenant' or its corresponding type declarations.
+src/app/api/bms/lms/enrollments/route.ts(21,50): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+src/app/api/bms/lms/enrollments/route.ts(49,60): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+src/app/api/bms/lms/enrollments/route.ts(56,9): error TS2367: This comparison appears to be unintentional because the types '{ code: string; detail?: string | undefined; } | null' and 'string' have no overlap.
+src/app/api/bms/ops/code-red/route.ts(8,28): error TS2307: Cannot find module '@/lib/tenant' or its corresponding type declarations.
+src/app/api/bms/ops/code-red/route.ts(38,51): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+src/app/api/bms/ops/code-red/route.ts(61,61): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+src/app/api/bms/ops/code-red/route.ts(77,9): error TS2367: This comparison appears to be unintentional because the types '{ code: string; detail?: string | undefined; } | null' and 'string' have no overlap.
+src/app/api/bms/studio/projects/route.ts(8,28): error TS2307: Cannot find module '@/lib/tenant' or its corresponding type declarations.
+src/app/api/bms/studio/projects/route.ts(26,54): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+src/app/api/bms/studio/projects/route.ts(49,57): error TS7006: Parameter 'tx' implicitly has an 'any' type.
+src/app/api/bms/studio/projects/route.ts(56,9): error TS2367: This comparison appears to be unintentional because the types '{ code: string; detail?: string | undefined; } | null' and 'string' have no overlap.

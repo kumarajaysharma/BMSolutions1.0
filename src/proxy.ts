@@ -25,6 +25,7 @@ const PUBLIC_PATHS = new Set([
   "/api/auth/session",
   "/api/health",
   "/api/requests", // Allows public access to the intake form endpoint
+  "/api/bms/lms/courses", // BMS Academy public course catalogue
   "/login",
   "/403",
   "/",
@@ -39,7 +40,12 @@ const PUBLIC_PATHS = new Set([
   "/vihang",
 ]);
 
-const ADMIN_PREFIXES = ["/admin", "/api/admin"];
+const ADMIN_PREFIXES = [
+  "/admin",
+  "/api/admin",
+  "/api/bms/hosting",    // Container + DNS management — owner/admin ONLY
+  "/api/bms/ops/gates",  // Gate control — owner/admin ONLY
+];
 
 function unauthorizedResponse(isApiRoute: boolean, req: NextRequest): NextResponse {
   if (isApiRoute) {
