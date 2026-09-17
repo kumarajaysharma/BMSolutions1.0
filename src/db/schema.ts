@@ -1,6 +1,6 @@
 /**
  * src/db/schema.ts
- * BNLV Group Enterprise Schema — Core, Services, LIMSY Supreme Court Module & Nidhivan Track 2
+ * BNLV Group Enterprise Schema — Core, Services, LIMSY Supreme Court Module, Nidhivan Track 2 & BMS Solutions
  * Validated for CI/CD Pipeline Integration
  */
 
@@ -679,3 +679,284 @@ export type NewNidhivanBoqItem = typeof nidhivanBoqItems.$inferInsert;
 
 export type NidhivanFinancialMetric = typeof nidhivanFinancialMetrics.$inferSelect;
 export type NewNidhivanFinancialMetric = typeof nidhivanFinancialMetrics.$inferInsert;
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BMS SOLUTIONS — ACADEMY LMS MODULE
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const bmsCourses = pgTable("bms_courses", {
+  id:               serial("id").primaryKey(),
+  tenantId:         integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  title:            text("title").notNull(),
+  slug:             text("slug").notNull(),
+  description:      text("description").notNull(),
+  longDescription:  text("long_description"),
+  category:         text("category").notNull().default("Agentic AI"),
+  level:            text("level").notNull().default("Beginner"),
+  durationHours:    integer("duration_hours").notNull().default(8),
+  thumbnailGradient: text("thumbnail_gradient").notNull().default("from-indigo-600 via-violet-600 to-fuchsia-600"),
+  status:           text("status").notNull().default("published"),
+  instructorId:     integer("instructor_id").references(() => users.id, { onDelete: "set null" }),
+  rating:           numeric("rating", { precision: 3, scale: 1 }).notNull().default("4.8"),
+  enrollmentsCount: integer("enrollments_count").notNull().default(0),
+  tags:             jsonb("tags").$type<string[]>().notNull().default([]),
+  objectives:       jsonb("objectives").$type<string[]>().notNull().default([]),
+  prerequisites:    jsonb("prerequisites").$type<string[]>().notNull().default([]),
+  createdAt:        timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:        timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const bmsModules = pgTable("bms_modules", {
+  id:          serial("id").primaryKey(),
+  tenantId:    integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  courseId:    integer("course_id").notNull().references(() => bmsCourses.id, { onDelete: "cascade" }),
+  title:       text("title").notNull(),
+  description: text("description"),
+  orderIndex:  integer("order_index").notNull().default(0),
+  createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const bmsLessons = pgTable("bms_lessons", {
+  id:              serial("id").primaryKey(),
+  tenantId:        integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  moduleId:        integer("module_id").notNull().references(() => bmsModules.id, { onDelete: "cascade" }),
+  title:           text("title").notNull(),
+  type:            text("type").notNull().default("video"),
+  durationMinutes: integer("duration_minutes").notNull().default(15),
+  content:         text("content"),
+  videoUrl:        text("video_url"),
+  codeStarter:     text("code_starter"),
+  orderIndex:      integer("order_index").notNull().default(0),
+  isFree:          boolean("is_free").notNull().default(false),
+});
+
+export const bmsLearningPaths = pgTable("bms_learning_paths", {
+  id:             serial("id").primaryKey(),
+  tenantId:       integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  title:          text("title").notNull(),
+  description:    text("description").notNull(),
+  level:          text("level").notNull().default("Beginner"),
+  estimatedWeeks: integer("estimated_weeks").notNull().default(6),
+  gradient:       text("gradient").notNull().default("from-cyan-500 to-blue-600"),
+  icon:           text("icon").notNull().default("route"),
+  createdAt:      timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const bmsEnrollments = pgTable("bms_enrollments", {
+  id:             serial("id").primaryKey(),
+  tenantId:       integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  userId:         integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  courseId:       integer("course_id").notNull().references(() => bmsCourses.id, { onDelete: "cascade" }),
+  progress:       numeric("progress", { precision: 5, scale: 2 }).notNull().default("0"),
+  status:         text("status").notNull().default("active"),
+  enrolledAt:     timestamp("enrolled_at", { withTimezone: true }).defaultNow().notNull(),
+  completedAt:    timestamp("completed_at", { withTimezone: true }),
+  lastAccessedAt: timestamp("last_accessed_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const bmsLessonProgress = pgTable("bms_lesson_progress", {
+  id:          serial("id").primaryKey(),
+  tenantId:    integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  userId:      integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  lessonId:    integer("lesson_id").notNull().references(() => bmsLessons.id, { onDelete: "cascade" }),
+  completed:   boolean("completed").notNull().default(false),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+});
+
+export const bmsAiAgents = pgTable("bms_ai_agents", {
+  id:            serial("id").primaryKey(),
+  tenantId:      integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  name:          text("name").notNull(),
+  role:          text("role").notNull(),
+  description:   text("description").notNull(),
+  model:         text("model").notNull().default("claude-sonnet-4-6"),
+  tools:         jsonb("tools").$type<string[]>().notNull().default([]),
+  systemPrompt:  text("system_prompt"),
+  color:         text("color").notNull().default("from-violet-500 to-purple-600"),
+  status:        text("status").notNull().default("active"),
+  autonomyLevel: integer("autonomy_level").notNull().default(3),
+  successRate:   numeric("success_rate", { precision: 5, scale: 2 }).notNull().default("94.50"),
+  runsCount:     integer("runs_count").notNull().default(0),
+  createdBy:     integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const bmsWorkflows = pgTable("bms_workflows", {
+  id:               serial("id").primaryKey(),
+  tenantId:         integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  title:            text("title").notNull(),
+  description:      text("description").notNull(),
+  category:         text("category").notNull().default("Multi-Agent"),
+  difficulty:       text("difficulty").notNull().default("Intermediate"),
+  estimatedMinutes: integer("estimated_minutes").notNull().default(90),
+  gradient:         text("gradient").notNull().default("from-emerald-500 to-teal-600"),
+  steps:            jsonb("steps").$type<Record<string, unknown>[]>().notNull().default([]),
+  agents:           jsonb("agents").$type<string[]>().notNull().default([]),
+  status:           text("status").notNull().default("published"),
+  createdBy:        integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt:        timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:        timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BMS SOLUTIONS — SAAS STUDIO BUILDER + HOSTING MODULE
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const bmsStudioProjects = pgTable("bms_studio_projects", {
+  id:          serial("id").primaryKey(),
+  tenantId:    integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  name:        text("name").notNull(),
+  slug:        text("slug").notNull(),
+  status:      text("status").notNull().default("draft"),
+  description: text("description").notNull().default(""),
+  gradient:    text("gradient").notNull().default("from-ink-900 to-amber-900"),
+  pages:       jsonb("pages").$type<Record<string, unknown>[]>().notNull().default([]),
+  apiRoutes:   jsonb("api_routes").$type<Record<string, unknown>[]>().notNull().default([]),
+  workflows:   jsonb("workflows").$type<Record<string, unknown>[]>().notNull().default([]),
+  deployments: jsonb("deployments").$type<Record<string, unknown>[]>().notNull().default([]),
+  domain:      jsonb("domain").$type<{ subdomain: string; customDomain: string; ssl: string }>().notNull().default({ subdomain: "", customDomain: "", ssl: "none" }),
+  product:     jsonb("product").$type<Record<string, unknown>>().notNull().default({}),
+  schemaCode:  text("schema_code").notNull().default(""),
+  framework:   jsonb("framework").$type<Record<string, unknown>>().notNull().default({}),
+  theme:       jsonb("theme").$type<{ primary: string; accent: string; radius: string; fontScale: number }>().notNull().default({ primary: "from-ink-900 to-amber-900", accent: "from-amber-600 to-orange-800", radius: "2xl", fontScale: 100 }),
+  tables:      jsonb("tables").$type<Record<string, unknown>[]>().notNull().default([]),
+  envVars:     jsonb("env_vars").$type<Record<string, unknown>[]>().notNull().default([]),
+  plan:        jsonb("plan").$type<{ tier: string; seats: number; bandwidth: string }>().notNull().default({ tier: "Pro", seats: 5, bandwidth: "12 GB" }),
+  version:     integer("version").notNull().default(1),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const bmsStudioAddons = pgTable("bms_studio_addons", {
+  id:          serial("id").primaryKey(),
+  tenantId:    integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  addonId:     text("addon_id").notNull(),
+  kind:        text("kind").notNull().default("skill"),
+  custom:      boolean("custom").notNull().default(false),
+  installed:   boolean("installed").notNull().default(true),
+  meta:        jsonb("meta").$type<Record<string, unknown>>().notNull().default({}),
+  version:     text("version").notNull().default("1.0.0"),
+  files:       jsonb("files").$type<Record<string, unknown>[]>().notNull().default([]),
+  history:     jsonb("history").$type<Record<string, unknown>[]>().notNull().default([]),
+  syncedAt:    timestamp("synced_at", { withTimezone: true }).defaultNow(),
+  installedAt: timestamp("installed_at", { withTimezone: true }).defaultNow(),
+});
+
+export const bmsHostContainers = pgTable("bms_host_containers", {
+  id:          serial("id").primaryKey(),
+  tenantId:    integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  siteSlug:    text("site_slug").notNull(),
+  image:       text("image").notNull().default("bms/site-runtime:latest"),
+  status:      text("status").notNull().default("running"),
+  port:        integer("port").notNull().default(10000),
+  region:      text("region").notNull().default("ap-south-1"),
+  cpuLimit:    numeric("cpu_limit", { precision: 4, scale: 2 }).notNull().default("1.0"),
+  memLimitMb:  integer("mem_limit_mb").notNull().default(512),
+  createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:   timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const bmsDnsRecords = pgTable("bms_dns_records", {
+  id:        serial("id").primaryKey(),
+  tenantId:  integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  siteSlug:  text("site_slug").notNull(),
+  type:      text("type").notNull().default("A"),
+  name:      text("name").notNull(),
+  content:   text("content").notNull(),
+  ttl:       integer("ttl").notNull().default(3600),
+  proxied:   boolean("proxied").notNull().default(true),
+  verified:  boolean("verified").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BMS SOLUTIONS — OPS INTELLIGENCE MODULE
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const bmsCodeRedCases = pgTable("bms_code_red_cases", {
+  id:            serial("id").primaryKey(),
+  tenantId:      integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  code:          text("code").notNull(),
+  title:         text("title").notNull(),
+  vertical:      text("vertical").notNull(),
+  businessUnit:  text("business_unit").notNull().default("BMSolutions"),
+  problem:       text("problem").notNull(),
+  solution:      text("solution").notNull(),
+  agents:        jsonb("agents").$type<string[]>().notNull().default([]),
+  impact:        text("impact").notNull(),
+  metric:        text("metric").notNull().default(""),
+  roiMultiple:   numeric("roi_multiple", { precision: 6, scale: 2 }).notNull().default("3.00"),
+  paybackMonths: integer("payback_months").notNull().default(9),
+  complexity:    text("complexity").notNull().default("Medium"),
+  effortWeeks:   integer("effort_weeks").notNull().default(10),
+  priority:      text("priority").notNull().default("P1"),
+  status:        text("status").notNull().default("proposed"),
+  architecture:  text("architecture").notNull().default("hub-spoke"),
+  createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const bmsAssignments = pgTable("bms_assignments", {
+  id:           serial("id").primaryKey(),
+  tenantId:     integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  code:         text("code").notNull(),
+  title:        text("title").notNull(),
+  course:       text("course").notNull(),
+  vertical:     text("vertical").notNull().default("Agentic AI"),
+  description:  text("description").notNull(),
+  prompt:       text("prompt").notNull(),
+  deliverables: jsonb("deliverables").$type<string[]>().notNull().default([]),
+  rubric:       text("rubric"),
+  maxScore:     integer("max_score").notNull().default(100),
+  dueInDays:    integer("due_in_days").notNull().default(7),
+  status:       text("status").notNull().default("open"),
+  score:        numeric("score", { precision: 6, scale: 2 }),
+  createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const bmsDocuments = pgTable("bms_documents", {
+  id:          serial("id").primaryKey(),
+  tenantId:    integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  code:        text("code").notNull(),
+  title:       text("title").notNull(),
+  type:        text("type").notNull().default("Playbook"),
+  description: text("description").notNull(),
+  body:        text("body").notNull().default(""),
+  version:     text("version").notNull().default("v1.0"),
+  owner:       text("owner").notNull().default("BNLV R&D"),
+  pages:       integer("pages").notNull().default(12),
+  sharedWith:  jsonb("shared_with").$type<string[]>().notNull().default([]),
+  updatedAt:   timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const bmsGates = pgTable("bms_gates", {
+  id:        serial("id").primaryKey(),
+  tenantId:  integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  key:       text("key").notNull(),
+  label:     text("label").notNull(),
+  status:    text("status").notNull().default("pending"),
+  owner:     text("owner").notNull().default("पंडित अजय शर्मा"),
+  note:      text("note"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPE EXPORTS — BMS MODULE
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type BmsCourse          = typeof bmsCourses.$inferSelect;
+export type BmsModule          = typeof bmsModules.$inferSelect;
+export type BmsLesson          = typeof bmsLessons.$inferSelect;
+export type BmsLearningPath    = typeof bmsLearningPaths.$inferSelect;
+export type BmsEnrollment      = typeof bmsEnrollments.$inferSelect;
+export type BmsLessonProgress  = typeof bmsLessonProgress.$inferSelect;
+export type BmsAiAgent         = typeof bmsAiAgents.$inferSelect;
+export type BmsWorkflow        = typeof bmsWorkflows.$inferSelect;
+export type BmsStudioProject   = typeof bmsStudioProjects.$inferSelect;
+export type BmsStudioAddon     = typeof bmsStudioAddons.$inferSelect;
+export type BmsHostContainer   = typeof bmsHostContainers.$inferSelect;
+export type BmsDnsRecord       = typeof bmsDnsRecords.$inferSelect;
+export type BmsCodeRedCase     = typeof bmsCodeRedCases.$inferSelect;
+export type BmsAssignment      = typeof bmsAssignments.$inferSelect;
+export type BmsDocument        = typeof bmsDocuments.$inferSelect;
+export type BmsGate            = typeof bmsGates.$inferSelect;
