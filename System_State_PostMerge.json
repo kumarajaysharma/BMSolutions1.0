@@ -1,0 +1,107 @@
+{
+  "document_ref": "BNLV-CONS-001",
+  "version": "1.0",
+  "date": "2026-09-15",
+  "classification": "Internal — Restricted",
+  "issued_by": "Office of the CTO, BNLV Group",
+  "platform": {
+    "name": "saas-studio",
+    "repository": "github.com/kumarajaysharma/BMSolutions1.0",
+    "local_path": "D:\\BMS-Final\\saas-studio",
+    "branch": "main",
+    "stack": {
+      "framework": "Next.js 16.2.6 App Router",
+      "orm": "Drizzle ORM 0.45.2",
+      "database": "Neon PostgreSQL (pooled + unpooled)",
+      "auth": "scrypt (N=16384,r=8,p=1) + jose JWT HS256",
+      "middleware": "Zero Trust proxy.ts — 6-step chain",
+      "styling": "Tailwind CSS 4.1.17",
+      "deployment": "Vercel + GitHub Integration",
+      "cdn_waf": "Cloudflare",
+      "ai_primary": "claude-sonnet-4-6 (Anthropic)",
+      "ai_fallback": "gemini-1.5-pro (Google)",
+      "ai_classifier": "claude-haiku-4-5-20251001"
+    }
+  },
+  "consolidation": {
+    "p1_status": "PRIMARY — Phase A+B complete, commercial launch blocked by NFT shim",
+    "p2_status": "MERGED — All tables, APIs, and seed data ported into P1 architecture",
+    "merge_date": "2026-09-15",
+    "architecture_decisions": {
+      "auth_hashing": "scrypt only — bcryptjs removed",
+      "primary_keys": "SERIAL INTEGER — UUID removed from enterprise tables",
+      "session_variable": "app.current_tenant_id",
+      "rls_scope": "FORCE ROW LEVEL SECURITY on ALL bms_* tables",
+      "dev_auth_bypass": "REMOVED — proxy.ts JWT chain is sole auth path"
+    }
+  },
+  "tenants": [
+    { "id": 1,   "slug": "bnlv",     "subsidiary": "BNLV Group (Root)",  "status": "active",  "admin": "admin@bnlvconsulting.com" },
+    { "id": 10,  "slug": "bms",      "subsidiary": "BMSolutions",         "status": "active",  "admin": "admin@bms.bnlvconsulting.com" },
+    { "id": 11,  "slug": "vihang",   "subsidiary": "Vihang Creations",    "status": "active",  "admin": "admin@vihang.bnlvconsulting.com" },
+    { "id": "TBD", "slug": "nidhivan", "subsidiary": "Nidhivan Consulting", "status": "pending", "admin": "admin@nidhivan.bnlvconsulting.com" },
+    { "id": "TBD", "slug": "limsy",    "subsidiary": "LIMSY Legal",         "status": "pending", "admin": "admin@limsy.bnlvconsulting.com" }
+  ],
+  "migrations": [
+    { "id": "0000–0012", "status": "applied",  "description": "P1 foundation + LIMSY + Nidhivan + RLS hardening" },
+    { "id": "0013",      "status": "PENDING",   "description": "BMS Academy LMS tables (8 tables + 8 RLS policies)" },
+    { "id": "0014",      "status": "PENDING",   "description": "BMS Studio Projects + Hosting Layer (4 tables + 4 RLS policies)" },
+    { "id": "0015",      "status": "PENDING",   "description": "BMS Ops Intelligence + Nidhivan RLS remediation (4 tables + 7 policies)" }
+  ],
+  "open_blockers": [
+    { "priority": "P0", "id": "SEC-001",    "description": "ROTATE ANTHROPIC_API_KEY — exposed in terminal. Do this BEFORE any push." },
+    { "priority": "P0", "id": "DEPLOY-001", "description": "Push scripts/vercel-build.mjs + vercel.json NFT shim to unblock Vercel" },
+    { "priority": "P0", "id": "DB-001",     "description": "Apply migrations 0013, 0014, 0015 via npm run db:migrate" },
+    { "priority": "P0", "id": "DB-002",     "description": "Provision nidhivan + limsy tenants via provision-tenant.mjs" },
+    { "priority": "P0", "id": "DB-003",     "description": "Fix Nidhivan RLS policies — boqs, boq_items, financial_metrics empty (0015 includes remediation)" },
+    { "priority": "P0", "id": "AUTH-001",   "description": "Reset admin@bms.bnlvconsulting.com password (user ID 13) with scrypt hash" },
+    { "priority": "P1", "id": "SEED-001",   "description": "Run seed-bms-academy.ts to seed BMS tenant with LMS + Ops data" },
+    { "priority": "P1", "id": "TEST-001",   "description": "Run ATP test matrix — 40 existing + 20 new BMS tests (target ≥58/60)" }
+  ],
+  "api_namespaces": {
+    "existing": [
+      "/api/auth/*", "/api/limsy/*", "/api/nidhivan/*",
+      "/api/audit", "/api/admin/*", "/api/ai/*",
+      "/api/careers", "/api/requests", "/api/health"
+    ],
+    "new_bms": [
+      "/api/bms/lms/courses", "/api/bms/lms/enrollments",
+      "/api/bms/lms/modules", "/api/bms/lms/lessons",
+      "/api/bms/lms/paths", "/api/bms/lms/progress",
+      "/api/bms/lms/my-learning",
+      "/api/bms/studio/projects", "/api/bms/studio/addons",
+      "/api/bms/studio/consolidate", "/api/bms/studio/agents",
+      "/api/bms/studio/workflows",
+      "/api/bms/hosting/containers", "/api/bms/hosting/dns",
+      "/api/bms/ops/code-red", "/api/bms/ops/assignments",
+      "/api/bms/ops/documents", "/api/bms/ops/gates",
+      "/api/bms/dashboard"
+    ]
+  },
+  "mandatory_rules": {
+    "ADR-001": "All DB queries through withTenant(tenantId, fn) — no exceptions",
+    "ADR-002": "Migrations via DATABASE_URL_UNPOOLED — pooled connection prohibited for migrations",
+    "AUTH":    "scrypt (N=16384,r=8,p=1) only — bcryptjs PROHIBITED",
+    "IDS":     "SERIAL integers + tenantId FK — UUID PKs PROHIBITED in enterprise tables",
+    "FINANCE": "bigint in paise for INR monetary columns — numeric(n,s) for rates/percentages",
+    "IDEMPOTENCY": "SHA-256 deterministic hash — crypto.randomUUID() PROHIBITED for idempotency keys",
+    "AUDIT":   "actor format: user:{userId} | system:{source}",
+    "DEPLOY":  "git push origin main only — npx vercel --prod PROHIBITED",
+    "LIMSY":   "No hard DELETE on limsy_orders — append-only legal records",
+    "RLS_NEW": "All bms_* tables: FORCE ROW LEVEL SECURITY + tenant_isolation policy TO studio_app"
+  },
+  "tech_debt": [
+    { "id": "TD-001", "severity": "HIGH",     "description": "sessions.tokenHash stores raw UUID — must be SHA-256(sessionId)" },
+    { "id": "TD-002", "severity": "MEDIUM",   "description": "nidhivan_boq_items.quantity is double_precision — precision risk" },
+    { "id": "TD-003", "severity": "HIGH",     "description": "P2 float fields ported as numeric — verify no real/float in schema-bms-additions.ts" },
+    { "id": "SEC-002","severity": "MEDIUM",   "description": "generateScryptHash('__dummy__') executes per login — cache at module level" },
+    { "id": "UI-001", "severity": "LOW",      "description": "/403 route returns 404 — needs not-found.tsx fallback fix" }
+  ],
+  "atp_summary": {
+    "total_tests": 80,
+    "passed": 40,
+    "pending": 20,
+    "new_bms": 20,
+    "target": "≥78/80 pass rate; 100% BLOCKER/CRITICAL pass mandatory for GO"
+  }
+}
