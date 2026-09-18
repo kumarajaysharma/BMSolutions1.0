@@ -84,3 +84,29 @@ Ensure you have the following installed on your local machine:
 # Check your Node and npm versions
 node -v
 npm -v
+InstallationClone the repository:Bashgit clone [https://github.com/your-username/bms.git](https://github.com/your-username/bms.git)
+cd bms
+Install dependencies:Bashnpm install
+# or
+yarn install
+Set up Environment Variables:Duplicate the .env.example file and configure your local settings.Bashcp .env.example .env
+Example .env configuration:VariableValueDescriptionDATABASE_URLpostgresql://user:pass@localhost:5432/bmsConnection string for PostgresJWT_SECRETyour_secure_secretSecret key for authenticationNODE_ENVdevelopmentCurrent runtime environmentSpin up the database (via Docker):Bashdocker-compose up -d
+Run database migrations:Bashnpm run db:migrate
+Start the development server:Bashnpm run dev
+Your application will now be running on http://localhost:3000.💡 UsageBMS is versatile. Here are a few ways to interact with the platform once it is running:1. Starting a New Visual Project (CLI):You can scaffold a new management tool directly from the terminal.Bashnpx bms-cli create-app "Sales CRM" --template=crm
+2. Registering Custom Developer Components:For technical users, wrapping a custom React component for the visual builder is simple:JavaScriptimport { registerComponent } from '@bms/core';
+
+const CustomMetricCard = ({ title, value }) => (
+  <div className="card shadow-lg p-4 rounded-xl">
+    <h3>{title}</h3>
+    <p className="text-2xl font-bold">{value}</p>
+  </div>
+);
+
+// Exposes the component to the non-technical drag-and-drop interface
+registerComponent(CustomMetricCard, {
+  name: 'Metric Card',
+  category: 'Analytics',
+  props: { title: 'string', value: 'number' }
+});
+🗺 Roadmap[x] Core Visual Builder Implementation[x] Code-injection API architecture[x] Initial managerial templates (CRM, Inventory)[ ] Currently Active: Beta testing phase and bug squashing[ ] Advanced User Analytics Dashboard[ ] Third-party plugin marketplace[ ] Mobile App Export (React Native integration)🤝 ContributingWe are actively seeking contributors! Whether you are a developer, designer, or business user, your input is highly valued.Fork the ProjectCreate your Feature Branch (git checkout -b feature/AmazingFeature)Commit your Changes (git commit -m 'Add some AmazingFeature')Push to the Branch (git push origin feature/AmazingFeature)Open a Pull RequestPlease read our CONTRIBUTING.md for details on our code of conduct and the process for submitting pull requests.📄 LicenseDistributed under the BMSolution License. See LICENSE for more information.📬 ContactDeveloper Name - @YourTwitterHandle - email@example.comProject Link: https://github.com/your-username/bms🎉 AcknowledgmentsWe would like to thank the following open-source projects and communities that made this ecosystem possible:Choose an Open Source LicenseShields.ioHeroiconsPrisma ORM
