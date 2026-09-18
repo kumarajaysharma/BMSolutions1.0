@@ -1,15 +1,21 @@
 /**
  * src/app/api/bms/lms/courses/route.ts
- * BMS Academy — Courses CRUD
- * Auth: x-tenant-id / x-user-id / x-user-role (injected by proxy.ts)
- * ADR-001: All queries via withTenant()
+ * BMS Academy — Course Catalogue CRUD
+ *
+ * Auth:    withTenant (@/lib/tenant) validates x-tenant-id/x-user-id/x-user-role
+ *          headers injected by proxy.ts — no manual header parsing.
+ * DB:      dbTx (@/db withTenant alias) sets app.current_tenant_id via SET LOCAL,
+ *          enforces FORCE RLS — ADR-001.
+ * Errors:  withErrorHandler (@/lib/api-handler) catches 23505/23503/ZodError
+ *          globally — no per-route try/catch needed for PG errors.
  */
-import { NextRequest, NextResponse } from "next/server";
-import { eq, desc } from "drizzle-orm";
-import { withTenant } from "@/lib/tenant";
-import { bmsCourses } from "@/db/schema";
-import { withErrorHandler, getPgError } from "@/lib/api-handler";
-import { z } from "zod";
+import { NextResponse }                  from "next/server";
+import { eq, desc }                      from "drizzle-orm";
+import { withTenant }                    from "@/lib/tenant";
+import { withTenant as dbTx }            from "@/db";
+import { withErrorHandler }              from "@/lib/api-handler";
+import { bmsCourses }                    from "@/db/schema";
+import { z }                             from "zod";
 
 const CreateCourseSchema = z.object({
   title:             z.string().min(3).max(255),
@@ -26,44 +32,35 @@ const CreateCourseSchema = z.object({
   prerequisites:     z.array(z.string()).default([]),
 });
 
-export const GET = withErrorHandler(async (req: NextRequest) => {
-  const tenantId = parseInt(req.headers.get("x-tenant-id") ?? "0");
-  const userId   = parseInt(req.headers.get("x-user-id") ?? "0");
-  if (!tenantId || !userId)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const courses = await withTenant(tenantId, async (tx) =>
-    tx.select().from(bmsCourses)
-      .where(eq(bmsCourses.tenantId, tenantId))
+const _GET = withTenant(async (_req, ctx) => {
+  const courses = await dbTx(ctx.tenantId, async (tx) =>
+    tx.select()
+      .from(bmsCourses)
+      .where(eq(bmsCourses.tenantId, ctx.tenantId))
       .orderBy(desc(bmsCourses.createdAt))
   );
   return NextResponse.json(courses);
 });
 
-export const POST = withErrorHandler(async (req: NextRequest) => {
-  const tenantId = parseInt(req.headers.get("x-tenant-id") ?? "0");
-  const userId   = parseInt(req.headers.get("x-user-id") ?? "0");
-  const userRole = req.headers.get("x-user-role") ?? "";
-  if (!tenantId || !userId)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!["owner", "admin", "architect", "developer"].includes(userRole))
+const _POST = withTenant(async (req, ctx) => {
+  if (!["owner", "admin", "architect", "developer"].includes(ctx.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const body   = await req.json();
   const parsed = CreateCourseSchema.safeParse(body);
-  if (!parsed.success)
+  if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
-
-  try {
-    const [course] = await withTenant(tenantId, async (tx) =>
-      tx.insert(bmsCourses)
-        .values({ tenantId, instructorId: userId, ...parsed.data })
-        .returning()
-    );
-    return NextResponse.json(course, { status: 201 });
-  } catch (err) {
-    if (getPgError(err) === "23505")
-      return NextResponse.json({ error: "Slug already exists in this tenant" }, { status: 409 });
-    throw err;
   }
+
+  // withErrorHandler catches 23505 → 409 automatically — no try/catch required
+  const [course] = await dbTx(ctx.tenantId, async (tx) =>
+    tx.insert(bmsCourses)
+      .values({ tenantId: ctx.tenantId, instructorId: ctx.userId, ...parsed.data })
+      .returning()
+  );
+  return NextResponse.json(course, { status: 201 });
 });
+
+export const GET  = withErrorHandler(_GET);
+export const POST = withErrorHandler(_POST);

@@ -29,11 +29,10 @@ async function seed() {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    
     // ADR-002: SET LOCAL must be first statement in every seed transaction
-    await client.query(
-      "SET LOCAL app.current_tenant_id = $1",
-      [BMS_TENANT_ID]
-    );
+    // FIX: Using string interpolation because PostgreSQL SET commands do not support parameterized $1 arguments.
+    await client.query(`SET LOCAL app.current_tenant_id = '${BMS_TENANT_ID}'`);
 
     // ── Idempotency guard ────────────────────────────────────
     const existing = await client.query(

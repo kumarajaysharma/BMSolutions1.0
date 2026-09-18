@@ -1,14 +1,15 @@
 /**
  * src/app/api/bms/ops/code-red/route.ts
- * BMS Ops Intelligence — Code Red Cases
- * ADR-001: All queries via withTenant()
+ * BMS Ops Intelligence — Code Red Business Cases
+ * Restricted to owner/admin/architect — audit logged on every POST.
  */
-import { NextRequest, NextResponse } from "next/server";
-import { eq, desc } from "drizzle-orm";
-import { withTenant } from "@/lib/tenant";
+import { NextResponse }         from "next/server";
+import { eq, desc }             from "drizzle-orm";
+import { withTenant }           from "@/lib/tenant";
+import { withTenant as dbTx }   from "@/db";
+import { withErrorHandler }     from "@/lib/api-handler";
 import { bmsCodeRedCases, auditLogs } from "@/db/schema";
-import { withErrorHandler, getPgError } from "@/lib/api-handler";
-import { z } from "zod";
+import { z }                    from "zod";
 
 const CreateCaseSchema = z.object({
   code:          z.string().min(1).max(20),
@@ -29,53 +30,47 @@ const CreateCaseSchema = z.object({
   architecture:  z.string().default("hub-spoke"),
 });
 
-export const GET = withErrorHandler(async (req: NextRequest) => {
-  const tenantId = parseInt(req.headers.get("x-tenant-id") ?? "0");
-  const userId   = parseInt(req.headers.get("x-user-id") ?? "0");
-  if (!tenantId || !userId)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const cases = await withTenant(tenantId, async (tx) =>
-    tx.select().from(bmsCodeRedCases)
-      .where(eq(bmsCodeRedCases.tenantId, tenantId))
+const _GET = withTenant(async (_req, ctx) => {
+  const cases = await dbTx(ctx.tenantId, async (tx) =>
+    tx.select()
+      .from(bmsCodeRedCases)
+      .where(eq(bmsCodeRedCases.tenantId, ctx.tenantId))
       .orderBy(desc(bmsCodeRedCases.createdAt))
   );
   return NextResponse.json(cases);
 });
 
-export const POST = withErrorHandler(async (req: NextRequest) => {
-  const tenantId = parseInt(req.headers.get("x-tenant-id") ?? "0");
-  const userId   = parseInt(req.headers.get("x-user-id") ?? "0");
-  const userRole = req.headers.get("x-user-role") ?? "";
-  if (!tenantId || !userId)
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!["owner", "admin", "architect"].includes(userRole))
-    return NextResponse.json({ error: "Forbidden — admin+ required" }, { status: 403 });
+const _POST = withTenant(async (req, ctx) => {
+  if (!["owner", "admin", "architect"].includes(ctx.role)) {
+    return NextResponse.json({ error: "Forbidden — architect or above required" }, { status: 403 });
+  }
 
   const body   = await req.json();
   const parsed = CreateCaseSchema.safeParse(body);
-  if (!parsed.success)
+  if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
-
-  try {
-    const [codeRedCase] = await withTenant(tenantId, async (tx) => {
-      const [row] = await tx.insert(bmsCodeRedCases)
-        .values({ tenantId, ...parsed.data })
-        .returning();
-      await tx.insert(auditLogs).values({
-        tenantId,
-        actor:  `user:${userId}`,
-        action: "code_red.created",
-        target: `bms_code_red_cases:${row.id}`,
-        severity: "info",
-        metadata: { code: parsed.data.code, priority: parsed.data.priority },
-      });
-      return [row];
-    });
-    return NextResponse.json(codeRedCase, { status: 201 });
-  } catch (err) {
-    if (getPgError(err) === "23505")
-      return NextResponse.json({ error: "Code already exists in this tenant" }, { status: 409 });
-    throw err;
   }
+
+  // withErrorHandler catches 23505 (duplicate code) → 409 automatically
+  const [codeRedCase] = await dbTx(ctx.tenantId, async (tx) => {
+    const [row] = await tx.insert(bmsCodeRedCases)
+      .values({ tenantId: ctx.tenantId, ...parsed.data })
+      .returning();
+
+    // Audit log — ADR-001 actor format
+    await tx.insert(auditLogs).values({
+      tenantId: ctx.tenantId,
+      actor:    `user:${ctx.userId}`,
+      action:   "code_red.created",
+      target:   `bms_code_red_cases:${row.id}`,
+      severity: "info",
+      metadata: { code: parsed.data.code, priority: parsed.data.priority },
+    });
+
+    return [row];
+  });
+  return NextResponse.json(codeRedCase, { status: 201 });
 });
+
+export const GET  = withErrorHandler(_GET);
+export const POST = withErrorHandler(_POST);
