@@ -4,17 +4,19 @@
  * 
  * Safely provisions a tenant workspace and an administrative user 
  * addressing schema constraints for name and composite unique indexes.
+ * Updated to generate $scrypt$ hashes and correctly assign the admin role.
  */
 
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import { Pool } from "@neondatabase/serverless";
-import bcrypt from "bcryptjs";
+import pg from "pg";
+import crypto from "crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Prioritize loading .env.local to access DATABASE_URL_UNPOOLED
+dotenv.config({ path: path.resolve(__dirname, "../.env.local") });
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
-dotenv.config({ path: path.resolve(__dirname, "../.env.production") });
 
 const args = process.argv.slice(2);
 function getArg(name) {
@@ -40,19 +42,23 @@ if (!url) {
   process.exit(1);
 }
 
-const pool = new Pool({ connectionString: url });
+// Use standard pg client with SSL enabled for Neon/Supabase compatibility
+const pool = new pg.Pool({ 
+  connectionString: url,
+  ssl: { rejectUnauthorized: false }
+});
+
+// Helper to generate $scrypt$ hashes compatible with BNLV auth requirements
+function hashPasswordScrypt(plainText) {
+  const salt = crypto.randomBytes(16);
+  const N = 16384, r = 8, p = 1;
+  const hash = crypto.scryptSync(plainText, salt, 64, { N, r, p });
+  return `$scrypt$N=${N},r=${r},p=${p}$${salt.toString("base64")}$${hash.toString("base64")}`;
+}
 
 async function main() {
   try {
     console.log(`⏳ Provisioning tenant workspace '${slug}' (${name})...`);
-
-    // Safely add missing enum values if they don't exist
-    try {
-      await pool.query(`ALTER TYPE tenant_plan ADD VALUE IF NOT EXISTS 'professional';`);
-    } catch (e) {}
-    try {
-      await pool.query(`ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'super_admin';`);
-    } catch (e) {}
 
     // 1. Check or Insert Tenant
     let tenantId;
@@ -74,12 +80,13 @@ async function main() {
       console.log(`✅ Tenant created with ID: ${tenantId}`);
     }
 
-    // 2. Hash password securely using bcryptjs
-    const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(password, salt);
-    const userName = `${name} Admin`;
+    // 2. Hash password securely using scrypt (required by diagnostic)
+    const passwordHash = hashPasswordScrypt(password);
+    
+    // 3. Apply explicit Super Admin Developer identity
+    const userName = "पंडित अजय शर्मा";
 
-    // 3. Check or Insert User using composite tenant_id and email check
+    // 4. Check or Insert User using composite tenant_id and email check
     const existingUser = await pool.query(
       `SELECT id FROM users WHERE tenant_id = $1 AND email = $2`,
       [tenantId, email]
@@ -88,13 +95,13 @@ async function main() {
     if (existingUser.rows.length > 0) {
       const userId = existingUser.rows[0].id;
       await pool.query(
-        `UPDATE users SET name = $1, password_hash = $2, role = 'super_admin' WHERE id = $3`,
+        `UPDATE users SET name = $1, password_hash = $2, role = 'admin' WHERE id = $3`,
         [userName, passwordHash, userId]
       );
       console.log(`✅ Admin user updated: ${email} (ID: ${userId})`);
     } else {
       const userRes = await pool.query(
-        `INSERT INTO users (tenant_id, name, email, password_hash, role, created_at) VALUES ($1, $2, $3, $4, 'super_admin', NOW()) RETURNING id`,
+        `INSERT INTO users (tenant_id, name, email, password_hash, role, created_at) VALUES ($1, $2, $3, $4, 'admin', NOW()) RETURNING id`,
         [tenantId, userName, email, passwordHash]
       );
       console.log(`✅ Admin user created: ${email} (ID: ${userRes.rows[0].id})`);
