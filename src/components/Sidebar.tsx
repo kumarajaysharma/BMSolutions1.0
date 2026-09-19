@@ -5,12 +5,16 @@ import { usePathname } from "next/navigation";
 import { BmsLogo } from "./BmsLogo";
 
 const NAV = [
+  // ── Studio Workspaces ─────────────────────────────────────────
   { href: "/studio",              label: "Studio Overview",    icon: "◈", hint: "BMS System architecture" },
   { href: "/studio/bms-academy",  label: "BMS Academy",        icon: "◎", hint: "AI courses · paths · progress" },
-  { href: "/studio/builder",      label: "SaaS Builder",       icon: "⬒", hint: "Studio projects · blueprints" },
+  { href: "/studio/bms-studio",   label: "Studio Projects",    icon: "⬚", hint: "SaaS Builder · blueprints" },
+  { href: "/studio/code-red",     label: "Code Red",           icon: "◈", hint: "Business cases · ROI analysis" },
+  { href: "/studio/assignments",  label: "Assignments",        icon: "◻", hint: "Tasks · grading · rubrics" },
+  { href: "/studio/documents",    label: "Document Vault",     icon: "◼", hint: "Playbooks · guides · standards" },
+  // ── Platform Tools ────────────────────────────────────────────
   { href: "/studio/ai-engine",    label: "AI Routing Engine",  icon: "⇄", hint: "Claude Sonnet · Gemini fallback" },
-  { href: "/builder",             label: "Visual Builder",     icon: "⬓", hint: "Drag & drop → React code" },
-  { href: "/ai-engine",           label: "AI Engine Admin",    icon: "⇅", hint: "Orchestration · agent registry" },
+  { href: "/builder",             label: "Visual Builder",     icon: "⬒", hint: "Drag & drop → React code" },
   { href: "/deployments",         label: "Deployments",        icon: "▶", hint: "CI/CD · canary · rollback" },
   { href: "/observability",       label: "Observability",      icon: "◉", hint: "SLOs · metrics · incidents" },
   { href: "/services",            label: "Developer Platform", icon: "⚙", hint: "Keys · flags · secrets" },
