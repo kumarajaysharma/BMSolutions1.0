@@ -177,9 +177,26 @@ export default async function StudioWorkspacePage() {
               <div className="space-y-3 text-xs text-slate-600">
                 <div className="flex items-center gap-2 rounded-xl bg-blue-50 p-3 text-blue-800">
                   <Cpu size={20} className="shrink-0" />
-                  <span><b>BMSolutions Module:</b> SaaS projects, environment provisioning, and CI/CD deployment pipelines.</span>
+                  <span><b>BMSolutions Module:</b> SaaS projects, environment provisioning, CI/CD pipelines, and AI-powered Academy.</span>
                 </div>
                 <p>Manage multi-tenant code generation, component catalogs, and automated build releases securely.</p>
+                <div className="mt-3 grid grid-cols-1 gap-2">
+                  <Link href="/studio/bms-academy"
+                    className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-indigo-700 transition hover:bg-indigo-100">
+                    <span className="font-semibold">BMS Academy — Courses</span>
+                    <span className="text-[10px] text-indigo-400">→</span>
+                  </Link>
+                  <Link href="/studio/bms-academy/my-learning"
+                    className="flex items-center justify-between rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-violet-700 transition hover:bg-violet-100">
+                    <span className="font-semibold">My Learning Dashboard</span>
+                    <span className="text-[10px] text-violet-400">→</span>
+                  </Link>
+                  <Link href="/studio/bms-academy/paths"
+                    className="flex items-center justify-between rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2 text-cyan-700 transition hover:bg-cyan-100">
+                    <span className="font-semibold">Learning Paths</span>
+                    <span className="text-[10px] text-cyan-400">→</span>
+                  </Link>
+                </div>
               </div>
             )}
 
