@@ -5,16 +5,19 @@ import { usePathname } from "next/navigation";
 import { BmsLogo } from "./BmsLogo";
 
 const NAV = [
-  { href: "/studio", label: "Studio Overview", icon: "◈", hint: "BMS System architecture" },
-  { href: "/builder", label: "Visual Builder", icon: "⬒", hint: "Drag & drop → React code" },
-  { href: "/ai-engine", label: "AI Routing Engine", icon: "⇄", hint: "Claude Fable 5 · Gemini 3.5" },
-  { href: "/deployments", label: "Deployments", icon: "▶", hint: "CI/CD · canary · rollback" },
-  { href: "/observability", label: "Observability", icon: "◉", hint: "SLOs · metrics · incidents" },
-  { href: "/services", label: "Developer Platform", icon: "⚙", hint: "Keys · flags · secrets" },
-  { href: "/audit", label: "Enterprise Audit", icon: "✓", hint: "Readiness · compliance" },
-  { href: "/app", label: "Market App Parity", icon: "▰", hint: "PWA · iOS · Android" },
-  { href: "/admin", label: "Studio Admin", icon: "⛨", hint: "RBAC · multi-tenant" },
-  { href: "/infrastructure", label: "Infrastructure", icon: "▣", hint: "IaC · environments" },
+  { href: "/studio",              label: "Studio Overview",    icon: "◈", hint: "BMS System architecture" },
+  { href: "/studio/bms-academy",  label: "BMS Academy",        icon: "◎", hint: "AI courses · paths · progress" },
+  { href: "/studio/builder",      label: "SaaS Builder",       icon: "⬒", hint: "Studio projects · blueprints" },
+  { href: "/studio/ai-engine",    label: "AI Routing Engine",  icon: "⇄", hint: "Claude Sonnet · Gemini fallback" },
+  { href: "/builder",             label: "Visual Builder",     icon: "⬓", hint: "Drag & drop → React code" },
+  { href: "/ai-engine",           label: "AI Engine Admin",    icon: "⇅", hint: "Orchestration · agent registry" },
+  { href: "/deployments",         label: "Deployments",        icon: "▶", hint: "CI/CD · canary · rollback" },
+  { href: "/observability",       label: "Observability",      icon: "◉", hint: "SLOs · metrics · incidents" },
+  { href: "/services",            label: "Developer Platform", icon: "⚙", hint: "Keys · flags · secrets" },
+  { href: "/audit",               label: "Enterprise Audit",   icon: "✓", hint: "Readiness · compliance" },
+  { href: "/app",                 label: "Market App Parity",  icon: "▰", hint: "PWA · iOS · Android" },
+  { href: "/admin",               label: "Studio Admin",       icon: "⛨", hint: "RBAC · multi-tenant" },
+  { href: "/infrastructure",      label: "Infrastructure",     icon: "▣", hint: "IaC · environments" },
 ];
 
 export function Sidebar() {
@@ -28,7 +31,10 @@ export function Sidebar() {
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {NAV.map((item) => {
-          const active = pathname.startsWith(item.href);
+          const active =
+            item.href === "/studio"
+              ? pathname === "/studio"
+              : pathname.startsWith(item.href);
           return (
             <Link
               key={item.href}
@@ -67,7 +73,7 @@ export function Sidebar() {
             <span>Zero-Trust AI Gate</span>
           </div>
           <div className="text-[10px] text-jade-700 font-medium">
-            Claude Fable 5 & Gemini code verified before git commit.
+            Claude Sonnet 4.6 & Gemini code verified before git commit.
           </div>
         </div>
       </div>
