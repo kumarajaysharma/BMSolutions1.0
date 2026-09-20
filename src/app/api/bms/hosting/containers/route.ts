@@ -3,6 +3,7 @@
  * BMS Hosting Layer — Container Management
  * Restricted to owner/admin — proxy.ts enforces via ADMIN_PREFIXES.
  * Defense in depth: role check also enforced in handler.
+ * Errors: Direct 23505 catch unwraps pg cause to guarantee 409 on duplicate container allocation.
  */
 import { NextResponse }         from "next/server";
 import { eq }                   from "drizzle-orm";
@@ -45,12 +46,26 @@ const _POST = withTenant(async (req, ctx) => {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
   }
 
-  const [container] = await dbTx(ctx.tenantId, async (tx) =>
-    tx.insert(bmsHostContainers)
-      .values({ tenantId: ctx.tenantId, ...parsed.data })
-      .returning()
-  );
-  return NextResponse.json(container, { status: 201 });
+  try {
+    const [container] = await dbTx(ctx.tenantId, async (tx) =>
+      tx.insert(bmsHostContainers)
+        .values({ tenantId: ctx.tenantId, ...parsed.data })
+        .returning()
+    );
+    return NextResponse.json(container, { status: 201 });
+  } catch (err: unknown) {
+    const pgCode =
+      (err as { code?: string })?.code ||
+      (err as { cause?: { code?: string } })?.cause?.code;
+
+    if (pgCode === "23505") {
+      return NextResponse.json(
+        { error: "Duplicate — resource already exists" },
+        { status: 409 }
+      );
+    }
+    throw err;
+  }
 });
 
 export const GET  = withErrorHandler(_GET);

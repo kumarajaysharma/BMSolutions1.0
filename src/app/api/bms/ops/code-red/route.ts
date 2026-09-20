@@ -1,7 +1,9 @@
 /**
  * src/app/api/bms/ops/code-red/route.ts
  * BMS Ops Intelligence — Code Red Business Cases
+ *
  * Restricted to owner/admin/architect — audit logged on every POST.
+ * Errors: Direct 23505 catch unwraps pg cause to guarantee 409 on duplicate code.
  */
 import { NextResponse }         from "next/server";
 import { eq, desc }             from "drizzle-orm";
@@ -51,25 +53,38 @@ const _POST = withTenant(async (req, ctx) => {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
   }
 
-  // withErrorHandler catches 23505 (duplicate code) → 409 automatically
-  const [codeRedCase] = await dbTx(ctx.tenantId, async (tx) => {
-    const [row] = await tx.insert(bmsCodeRedCases)
-      .values({ tenantId: ctx.tenantId, ...parsed.data })
-      .returning();
+  try {
+    const [codeRedCase] = await dbTx(ctx.tenantId, async (tx) => {
+      const [row] = await tx.insert(bmsCodeRedCases)
+        .values({ tenantId: ctx.tenantId, ...parsed.data })
+        .returning();
 
-    // Audit log — ADR-001 actor format
-    await tx.insert(auditLogs).values({
-      tenantId: ctx.tenantId,
-      actor:    `user:${ctx.userId}`,
-      action:   "code_red.created",
-      target:   `bms_code_red_cases:${row.id}`,
-      severity: "info",
-      metadata: { code: parsed.data.code, priority: parsed.data.priority },
+      // Audit log — ADR-001 actor format
+      await tx.insert(auditLogs).values({
+        tenantId: ctx.tenantId,
+        actor:    `user:${ctx.userId}`,
+        action:   "code_red.created",
+        target:   `bms_code_red_cases:${row.id}`,
+        severity: "info",
+        metadata: { code: parsed.data.code, priority: parsed.data.priority },
+      });
+
+      return [row];
     });
+    return NextResponse.json(codeRedCase, { status: 201 });
+  } catch (err: unknown) {
+    const pgCode =
+      (err as { code?: string })?.code ||
+      (err as { cause?: { code?: string } })?.cause?.code;
 
-    return [row];
-  });
-  return NextResponse.json(codeRedCase, { status: 201 });
+    if (pgCode === "23505") {
+      return NextResponse.json(
+        { error: "Duplicate — resource already exists" },
+        { status: 409 }
+      );
+    }
+    throw err;
+  }
 });
 
 export const GET  = withErrorHandler(_GET);
