@@ -11,7 +11,7 @@ const NAV = [
   { href: "/studio/bms-studio",   label: "Studio Projects",    icon: "⬚", hint: "SaaS Builder · blueprints" },
   { href: "/studio/code-red",     label: "Code Red",           icon: "◈", hint: "Business cases · ROI analysis" },
   { href: "/studio/assignments",  label: "Assignments",        icon: "◻", hint: "Tasks · grading · rubrics" },
-  { href: "/studio/documents",    label: "Document Vault",     icon: "◼", hint: "Playbooks · guides · standards" },
+  { href: "/studio/bms/documents",label: "Document Vault",     icon: "◼", hint: "Playbooks · guides · standards" },
   // ── Platform Tools ────────────────────────────────────────────
   { href: "/studio/ai-engine",    label: "AI Routing Engine",  icon: "⇄", hint: "Claude Sonnet · Gemini fallback" },
   { href: "/builder",             label: "Visual Builder",     icon: "⬒", hint: "Drag & drop → React code" },
