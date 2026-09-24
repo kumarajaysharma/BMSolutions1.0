@@ -6,21 +6,7 @@
  * BMS Documentation Engine — Workspace
  * =====================================
  * Full 4-phase enterprise document lifecycle workspace.
- * Adapted from BNLV_documentation-engineA.zip (src/app/dashboard/studio/page.tsx)
- * with the following BNLV-specific modifications:
- *
- *   1. Auth via JWT cookie (bms_session) — no separate auth provider
- *   2. Data fetched from /api/bms/documents/* (BNLV tenant-scoped routes)
- *   3. AI generation via POST /api/bms/documents/[id] (architect+ gated)
- *   4. BNLV dark brand theme (navy #091929, gold #C9A84C)
- *   5. 4-phase structure (reference engine had 3 phases)
- *   6. Scope variable editor grouped by category (Parties/Technical/Commercial/Compliance)
- *   7. Document history panel showing all saved documents for the tenant
- *   8. No withUser wrapper — middleware injects x-tenant-id from JWT automatically
- *
- * DEPLOYMENT:
- *   Place at: src/app/studio/bms/documents/page.tsx
- *   Add link to BMS workspace nav / sidebar
+ * Adapted for BNLV Group Enterprise Architecture
  */
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -32,7 +18,6 @@ import {
   renderMarkdown,
   type PhaseKey,
   type ScopeVar,
-  type Artifact,
 } from '@/lib/bms-artifacts';
 
 // ── Brand tokens (matches BNLV platform) ─────────────────────────────────────
@@ -172,7 +157,7 @@ export default function BmsDocumentsPage() {
   const [activeKey, setActiveKey]   = useState<string>('mou');
 
   // Scope editor
-  const [scope, setScope]           = useState<ScopeVar[]>(DEFAULT_SCOPE);
+  const [scope, setScope]           = useState<ScopeVar[]>(DEFAULT_SCOPE || []);
   const [scopeOpen, setScopeOpen]   = useState(false);
   const [scopeGroup, setScopeGroup] = useState<string>('Parties');
 
@@ -195,23 +180,23 @@ export default function BmsDocumentsPage() {
 
   // Derived
   const phaseArtifacts = useMemo(() =>
-    ARTIFACTS.filter(a => a.phase === phase),
+    (ARTIFACTS || []).filter(a => a.phase === phase),
     [phase]
   );
 
   const artifact = useMemo(() =>
-    ARTIFACTS.find(a => a.key === activeKey) ?? phaseArtifacts[0] ?? ARTIFACTS[0],
+    (ARTIFACTS || []).find(a => a.key === activeKey) ?? phaseArtifacts[0] ?? ARTIFACTS[0],
     [activeKey, phaseArtifacts]
   );
 
-  const preview = useMemo(() =>
-    renderMarkdown(injectScope(artifact.content, scope)),
-    [artifact, scope]
-  );
+  const preview = useMemo(() => {
+    if (!artifact) return '';
+    return renderMarkdown(injectScope(artifact.content, scope));
+  }, [artifact, scope]);
 
   // When phase changes, default to first artifact of that phase
   useEffect(() => {
-    const first = ARTIFACTS.find(a => a.phase === phase);
+    const first = (ARTIFACTS || []).find(a => a.phase === phase);
     if (first) setActiveKey(first.key);
   }, [phase]);
 
@@ -228,7 +213,7 @@ export default function BmsDocumentsPage() {
   }, []);
 
   const scopeGroups = useMemo(() =>
-    Array.from(new Set(DEFAULT_SCOPE.map(s => s.group))),
+    Array.from(new Set((DEFAULT_SCOPE || []).map(s => s.group))),
     []
   );
 
@@ -254,6 +239,7 @@ export default function BmsDocumentsPage() {
 
   // ── Save draft ──────────────────────────────────────────────────────────────
   const saveDraft = useCallback(async () => {
+    if (!artifact) return;
     setSaving(true);
     setError(null);
     try {
@@ -296,6 +282,7 @@ export default function BmsDocumentsPage() {
 
   // ── AI Generation ───────────────────────────────────────────────────────────
   const generate = useCallback(async () => {
+    if (!artifact) return;
     setGenerating(true);
     setError(null);
 
@@ -374,6 +361,10 @@ export default function BmsDocumentsPage() {
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────────
 
+  if (!artifact) {
+    return <div style={{ color: C.text, padding: 20 }}>Loading Artifacts...</div>;
+  }
+
   return (
     <div style={{ fontFamily: C.sans, background: C.bg, color: C.text, minHeight: '100vh',
       display: 'flex', flexDirection: 'column' }}>
@@ -427,7 +418,7 @@ export default function BmsDocumentsPage() {
         {([1, 2, 3, 4] as PhaseKey[]).map(p => {
           const meta  = PHASE_META[p];
           const color = PHASE_COLOR[p];
-          const count = ARTIFACTS.filter(a => a.phase === p).length;
+          const count = (ARTIFACTS || []).filter(a => a.phase === p).length;
           return (
             <button key={p} onClick={() => setPhase(p)} style={{
               background: 'none', border: 'none', cursor: 'pointer',
@@ -524,7 +515,7 @@ export default function BmsDocumentsPage() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
                 {filteredScope.map(v => (
                   <div key={v.key}>
-                    <Label color={C.sub}>{v.label} <span style={{ color: C.muted }}>({{`${v.key}`}})</span></Label>
+                    <Label color={C.sub}>{v.label} <span style={{ color: C.muted }}>({v.key})</span></Label>
                     <input
                       value={v.value}
                       onChange={e => updateScope(v.key, e.target.value)}
@@ -595,14 +586,6 @@ export default function BmsDocumentsPage() {
 
             {/* Rendered preview */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px', background: '#F9FAFB' }}>
-              <div
-                style={{
-                  maxWidth: 860, margin: '0 auto',
-                  fontFamily: "'Georgia', 'Times New Roman', serif",
-                  fontSize: 14, lineHeight: 1.8, color: '#1C2B3A',
-                }}
-                dangerouslySetInnerHTML={{ __html: preview }}
-              />
               <style>{`
                 .doc-preview h1 { font-size: 26px; font-weight: 700; border-bottom: 3px solid #C9A84C; padding-bottom: 10px; margin: 28px 0 16px; color: #091929; }
                 .doc-preview h2 { font-size: 19px; font-weight: 700; margin: 24px 0 10px; color: #091929; }
@@ -620,7 +603,11 @@ export default function BmsDocumentsPage() {
               `}</style>
               <div
                 className="doc-preview"
-                style={{ maxWidth: 860, margin: '0 auto' }}
+                style={{ 
+                  maxWidth: 860, margin: '0 auto', 
+                  fontFamily: "'Georgia', 'Times New Roman', serif",
+                  fontSize: 14, lineHeight: 1.8, color: '#1C2B3A' 
+                }}
                 dangerouslySetInnerHTML={{ __html: preview }}
               />
             </div>
@@ -729,7 +716,7 @@ export default function BmsDocumentsPage() {
           </span>
         )}
         <span style={{ marginLeft: 'auto', fontFamily: C.mono, fontSize: 8, color: C.muted }}>
-          {ARTIFACTS.length} templates · Claude Sonnet 5 · DPDP Act 2023 Compliant
+          {(ARTIFACTS || []).length} templates · Claude Sonnet 5 · DPDP Act 2023 Compliant
         </span>
       </div>
     </div>
