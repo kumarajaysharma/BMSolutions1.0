@@ -152,7 +152,7 @@ ${cleanSubject}`;
     model:       anthropic(SYNOPSIS_MODEL),
     prompt,
     temperature: 0.1,   // Deterministic — formal legal output
-    maxTokens:   1_500,
+    maxOutputTokens:   1_500,
   });
 
   // ── Audit log + optional persistence ───────────────────────────────────────

@@ -81,7 +81,7 @@ async function _GET(req: NextRequest) {
 
   return NextResponse.json(
     {
-      documents: docs.map(d => ({
+      documents: docs.map((d: typeof bmsDocuments.$inferSelect) => ({
         ...d,
         createdAt: d.createdAt.toISOString(),
         updatedAt: d.updatedAt.toISOString(),
