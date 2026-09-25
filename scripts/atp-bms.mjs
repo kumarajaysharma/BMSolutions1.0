@@ -20,7 +20,7 @@ const ROOT      = path.resolve(__dirname, "..");
 dotenv.config({ path: path.join(ROOT, ".env.local") });
 dotenv.config({ path: path.join(ROOT, ".env") });
 
-const BASE_URL   = "http://localhost:3000";
+const BASE_URL   = process.env.NEXT_PUBLIC_APP_URL ?? "https://bms.bnlvconsulting.com";
 const BMS_TENANT = 10;
 
 // ── Colour helpers ───────────────────────────────────────────
