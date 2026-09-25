@@ -212,7 +212,7 @@ DOCUMENT TYPE: ${doc.documentType}`;
       system:      systemPrompt,
       prompt:      userPrompt,
       temperature: 0.15,   // Low temperature for formal commercial documents
-      maxTokens:   4_000,
+      maxOutputTokens:   4_000,
     });
     generatedMarkdown = text;
   } catch (aiErr) {

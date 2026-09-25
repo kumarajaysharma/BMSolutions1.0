@@ -34,7 +34,7 @@ const _GET = withTenant(async (req, ctx) => {
       return tx.select().from(bmsDocuments)
         .where(and(
           eq(bmsDocuments.tenantId, ctx.tenantId),
-          eq(bmsDocuments.type,     typeFilter)
+          eq(bmsDocuments.documentType, typeFilter as typeof bmsDocuments.$inferSelect['documentType'])
         ))
         .orderBy(desc(bmsDocuments.updatedAt));
     }
