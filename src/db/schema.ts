@@ -17,6 +17,23 @@ import { relations } from "drizzle-orm";
 export const tenantPlanEnum = pgEnum('tenant_plan', ['pilot', 'starter', 'professional', 'scale', 'enterprise']);
 export const requestStatusEnum = pgEnum('request_status', ['pending', 'approved', 'rejected', 'onboarded']);
 
+export const bmsDocumentTypeEnum = pgEnum('bms_document_type', [
+  // Phase 1 — Commercial Inception
+  'MOU', 'BSD', 'SLA', 'MANAGED_SERVICES_CONTRACT',
+  // Phase 2 — Architecture & Design
+  'ENTERPRISE_ARCHITECTURE', 'HLD', 'LLD', 'SPEC_GENERATIVE',
+  // Phase 3 — Security, QA
+  'SECURITY_ATP', 'TEST_PROCEDURES', 'VALIDATION_PROCEDURES',
+  // Phase 4 — Launch & Closure
+  'BUILD_REPORT', 'LAUNCH_ATP', 'PROJECT_CLOSURE',
+  // Legacy / subsidiary-specific
+  'DPR', 'BOQ_CPWD', 'LEGAL_FRAMEWORK', 'FINANCIAL_MODEL', 'CORPORATE_CHARTER',
+]);
+
+export const bmsDocumentStatusEnum = pgEnum('bms_document_status', [
+  'DRAFT', 'GENERATING', 'REVIEW_PENDING', 'PUBLISHED', 'ARCHIVED',
+]);
+
 export const courtLevelEnum = pgEnum("court_level", [
   'supreme_court', 'high_court', 'district_court', 'tribunal',
   'consumer_forum', 'arbitration', 'nclt', 'nclat', 'ncdrc'
@@ -297,6 +314,9 @@ export const limsyCases = pgTable("limsy_cases", {
   disposalDate: timestamp("disposal_date", { withTimezone: true }),
   subjectMatter: text("subject_matter").notNull(),
   reliefSought: text("relief_sought"),
+  synopsis: text("synopsis"),
+  synopsisGeneratedAt: timestamp("synopsis_generated_at", { withTimezone: true }),
+  synopsisGeneratedBy: integer("synopsis_generated_by").references(() => users.id, { onDelete: "set null" }),
   actsSections: text("acts_sections"),
   tags: text("tags"),
   urgencyFlag: boolean("urgency_flag").notNull().default(false),
@@ -314,6 +334,9 @@ export const limsyCases = pgTable("limsy_cases", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export type LimsyCaseInsert = typeof limsyCases.$inferInsert;
+export type LimsyCaseSelect = typeof limsyCases.$inferSelect;
 
 export const limsyBenchAssignments = pgTable("limsy_bench_assignments", {
   id: serial("id").primaryKey(),
@@ -686,25 +709,25 @@ export type NewNidhivanFinancialMetric = typeof nidhivanFinancialMetrics.$inferI
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const bmsCourses = pgTable("bms_courses", {
-  id:               serial("id").primaryKey(),
-  tenantId:         integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
-  title:            text("title").notNull(),
-  slug:             text("slug").notNull(),
-  description:      text("description").notNull(),
-  longDescription:  text("long_description"),
-  category:         text("category").notNull().default("Agentic AI"),
-  level:            text("level").notNull().default("Beginner"),
-  durationHours:    integer("duration_hours").notNull().default(8),
+  id:                serial("id").primaryKey(),
+  tenantId:          integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  title:             text("title").notNull(),
+  slug:              text("slug").notNull(),
+  description:       text("description").notNull(),
+  longDescription:   text("long_description"),
+  category:          text("category").notNull().default("Agentic AI"),
+  level:             text("level").notNull().default("Beginner"),
+  durationHours:     integer("duration_hours").notNull().default(8),
   thumbnailGradient: text("thumbnail_gradient").notNull().default("from-indigo-600 via-violet-600 to-fuchsia-600"),
-  status:           text("status").notNull().default("published"),
-  instructorId:     integer("instructor_id").references(() => users.id, { onDelete: "set null" }),
-  rating:           numeric("rating", { precision: 3, scale: 1 }).notNull().default("4.8"),
-  enrollmentsCount: integer("enrollments_count").notNull().default(0),
-  tags:             jsonb("tags").$type<string[]>().notNull().default([]),
-  objectives:       jsonb("objectives").$type<string[]>().notNull().default([]),
-  prerequisites:    jsonb("prerequisites").$type<string[]>().notNull().default([]),
-  createdAt:        timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt:        timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  status:            text("status").notNull().default("published"),
+  instructorId:      integer("instructor_id").references(() => users.id, { onDelete: "set null" }),
+  rating:            numeric("rating", { precision: 3, scale: 1 }).notNull().default("4.8"),
+  enrollmentsCount:  integer("enrollments_count").notNull().default(0),
+  tags:              jsonb("tags").$type<string[]>().notNull().default([]),
+  objectives:        jsonb("objectives").$type<string[]>().notNull().default([]),
+  prerequisites:     jsonb("prerequisites").$type<string[]>().notNull().default([]),
+  createdAt:         timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:         timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const bmsModules = pgTable("bms_modules", {
@@ -914,19 +937,46 @@ export const bmsAssignments = pgTable("bms_assignments", {
   createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const bmsDocuments = pgTable("bms_documents", {
-  id:          serial("id").primaryKey(),
-  tenantId:    integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
-  code:        text("code").notNull(),
-  title:       text("title").notNull(),
-  type:        text("type").notNull().default("Playbook"),
-  description: text("description").notNull(),
-  body:        text("body").notNull().default(""),
-  version:     text("version").notNull().default("v1.0"),
-  owner:       text("owner").notNull().default("BNLV R&D"),
-  pages:       integer("pages").notNull().default(12),
-  sharedWith:  jsonb("shared_with").$type<string[]>().notNull().default([]),
-  updatedAt:   timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+export const bmsDocuments = pgTable('bms_documents', {
+  id:           serial('id').primaryKey(),
+  tenantId:     integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  authorId:     integer('author_id').references(() => users.id, { onDelete: 'set null' }),
+  title:        text('title').notNull(),
+  documentType: bmsDocumentTypeEnum('document_type').notNull(),
+  status:       bmsDocumentStatusEnum('status').notNull().default('DRAFT'),
+  phase:        integer('phase').notNull(),
+  artifactKey:  text('artifact_key').notNull(),
+  rawMarkdown:  text('raw_markdown'),
+  content: jsonb('content')
+    .$type<{
+      blocks?: Array<{
+        type: 'heading' | 'paragraph' | 'table' | 'list' | 'code';
+        level?: number;
+        text?: string;
+        headers?: string[];
+        rows?: string[][];
+        items?: string[];
+        lang?: string;
+      }>;
+    }>()
+    .default({}),
+  scopeSnapshot: jsonb('scope_snapshot')
+    .$type<Record<string, string>>()
+    .default({}),
+  metadata: jsonb('metadata')
+    .$type<{
+      modelRouting?:     string;
+      generationPrompt?: string;
+      financialRatios?:  Record<string, number>;
+      cpwdRegionCode?:   string;
+      clientIndustry?:   string;
+      phase?:            number;
+      artifactKey?:      string;
+    }>()
+    .default({}),
+  version:   integer('version').notNull().default(1),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const bmsGates = pgTable("bms_gates", {
@@ -940,8 +990,294 @@ export const bmsGates = pgTable("bms_gates", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+// ═════════════════════════════════════════════════════════════════════════════
+// MIGRATION 0018 ADDITIONS — VISUAL BUILDER, NIDHIVAN FINANCE & LIMSY EXTENDED
+// ═════════════════════════════════════════════════════════════════════════════
+
 // ─────────────────────────────────────────────────────────────────────────────
-// TYPE EXPORTS — BMS MODULE
+// SECTION A: BUILDER / STUDIO
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const builderPages = pgTable('builder_pages', {
+  id:           serial('id').primaryKey(),
+  tenantId:     integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  projectId:    integer('project_id').references(() => bmsStudioProjects.id, { onDelete: 'set null' }),
+  parentId:     integer('parent_id'),        // self-ref FK added in migration SQL
+  name:         text('name').notNull(),
+  path:         text('path').notNull().default('/'),
+  status:       text('status').notNull().default('draft'),
+  blocks:       jsonb('blocks').$type<Record<string, unknown>[]>().default([]),
+  theme:        text('theme').notNull().default('aurora'),
+  artifactKind: text('artifact_kind').notNull().default('website'),
+  sortIndex:    integer('sort_index').notNull().default(0),
+  version:      integer('version').notNull().default(1),
+  updatedAt:    timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const builderBlocks = pgTable('builder_blocks', {
+  id:          serial('id').primaryKey(),
+  tenantId:    integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  name:        text('name').notNull(),
+  category:    text('category').notNull().default('Section'),
+  brand:       text('brand').notNull().default('Shared'),
+  description: text('description').notNull().default(''),
+  kind:        text('kind').notNull().default('hero'),
+  tags:        text('tags').notNull().default(''),
+  usage:       integer('usage').notNull().default(0),
+  status:      text('status').notNull().default('stable'),
+  createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const bmsPendencies = pgTable('bms_pendencies', {
+  id:               serial('id').primaryKey(),
+  tenantId:         integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  title:            text('title').notNull(),
+  detail:           text('detail').notNull().default(''),
+  category:         text('category').notNull().default('security'),
+  severity:         text('severity').notNull().default('medium'),
+  status:           text('status').notNull().default('open'),
+  owner:            text('owner').notNull().default(''),
+  environment:      text('environment').notNull().default('development'),
+  remediation:      text('remediation').notNull().default(''),
+  targetRelease:    text('target_release').notNull().default(''),
+  blocksProduction: boolean('blocks_production').notNull().default(false),
+  createdAt:        timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const bmsReleaseEvidence = pgTable('bms_release_evidence', {
+  id:          serial('id').primaryKey(),
+  tenantId:    integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  version:     text('version').notNull(),
+  environment: text('environment').notNull().default('evaluation'),
+  decision:    text('decision').notNull().default('blocked'),
+  actor:       text('actor').notNull(),
+  notes:       text('notes').notNull().default(''),
+  passed:      integer('passed').notNull().default(0),
+  warnings:    integer('warnings').notNull().default(0),
+  failures:    integer('failures').notNull().default(0),
+  blockers:    integer('blockers').notNull().default(0),
+  snapshot:    jsonb('snapshot').$type<Record<string, unknown>>().default({}),
+  createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION B: NIDHIVAN FINANCIAL INTELLIGENCE
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const nidhivanEntities = pgTable('nidhivan_entities', {
+  id:           serial('id').primaryKey(),
+  tenantId:     integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  name:         text('name').notNull(),
+  ticker:       text('ticker').notNull().default(''),
+  sector:       text('sector').notNull().default('Financials'),
+  country:      text('country').notNull().default('India'),
+  status:       text('status').notNull().default('active'),
+  relationship: text('relationship').notNull().default('advisory'),
+  fyEnd:        text('fy_end').notNull().default('31 March'),
+  currency:     text('currency').notNull().default('INR'),
+  // ADR-004: bigint in paise — application divides by 100 for display (₹)
+  aumPaise:     bigint('aum_paise', { mode: 'number' }).notNull().default(0),
+  revenuePaise: bigint('revenue_paise', { mode: 'number' }).notNull().default(0),
+  notes:        text('notes').notNull().default(''),
+  createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const nidhivanAccounts = pgTable('nidhivan_accounts', {
+  id:       serial('id').primaryKey(),
+  tenantId: integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  entityId: integer('entity_id').notNull().references(() => nidhivanEntities.id, { onDelete: 'cascade' }),
+  code:     text('code').notNull(),
+  name:     text('name').notNull(),
+  type:     text('type').notNull().default('asset'),
+  subtype:  text('subtype').notNull().default(''),
+  currency: text('currency').notNull().default('INR'),
+  active:   boolean('active').notNull().default(true),
+});
+
+export const nidhivanJournals = pgTable('nidhivan_journals', {
+  id:         serial('id').primaryKey(),
+  tenantId:   integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  entityId:   integer('entity_id').notNull().references(() => nidhivanEntities.id, { onDelete: 'cascade' }),
+  ref:        text('ref').notNull(),
+  date:       text('date').notNull().default(''),
+  memo:       text('memo').notNull().default(''),
+  source:     text('source').notNull().default('manual'),
+  status:     text('status').notNull().default('draft'),
+  // ADR-004: lines[].debit and lines[].credit MUST be in paise at application layer
+  lines:      jsonb('lines').$type<Array<{
+    accountId: number;
+    debit:     number; // paise
+    credit:    number; // paise
+    memo:      string;
+  }>>().default([]),
+  reversalOf: integer('reversal_of').references((): AnyPgColumn => nidhivanJournals.id, { onDelete: 'set null' }),
+  createdBy:  text('created_by').notNull().default('studio'),
+  postedBy:   text('posted_by').notNull().default(''),
+  postedAt:   timestamp('posted_at', { withTimezone: true }),
+  createdAt:  timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const nidhivanResearch = pgTable('nidhivan_research', {
+  id:          serial('id').primaryKey(),
+  tenantId:    integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  title:       text('title').notNull(),
+  desk:        text('desk').notNull().default('equity'),
+  entityId:    integer('entity_id').references(() => nidhivanEntities.id, { onDelete: 'set null' }),
+  status:      text('status').notNull().default('draft'),
+  thesis:      text('thesis').notNull().default(''),
+  body:        text('body').notNull().default(''),
+  rating:      text('rating').notNull().default('hold'),
+  author:      text('author').notNull().default('Nidhivan Desk'),
+  publishedOn: text('published_on').notNull().default(''),
+  createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const nidhivanLab = pgTable('nidhivan_lab', {
+  id:         serial('id').primaryKey(),
+  tenantId:   integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  name:       text('name').notNull(),
+  stage:      text('stage').notNull().default('ideation'),
+  domain:     text('domain').notNull().default('payments'),
+  hypothesis: text('hypothesis').notNull().default(''),
+  outcome:    text('outcome').notNull().default(''),
+  owner:      text('owner').notNull().default(''),
+  spendPaise: bigint('spend_paise', { mode: 'number' }).notNull().default(0), // ADR-004
+  status:     text('status').notNull().default('active'),
+  createdAt:  timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const nidhivanCounsel = pgTable('nidhivan_counsel', {
+  id:        serial('id').primaryKey(),
+  tenantId:  integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  entityId:  integer('entity_id').references(() => nidhivanEntities.id, { onDelete: 'set null' }),
+  title:     text('title').notNull().default('Financial Co-Counsel'),
+  messages:  jsonb('messages').$type<Array<{
+    role:      'user' | 'assistant';
+    content:   string;
+    timestamp: string;
+  }>>().default([]),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const nidhivanCloses = pgTable('nidhivan_closes', {
+  id:        serial('id').primaryKey(),
+  tenantId:  integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  entityId:  integer('entity_id').notNull().references(() => nidhivanEntities.id, { onDelete: 'cascade' }),
+  period:    text('period').notNull(),
+  status:    text('status').notNull().default('open'),
+  checklist: jsonb('checklist').$type<Array<{
+    task:  string;
+    done:  boolean;
+    owner: string;
+  }>>().default([]),
+  owner:     text('owner').notNull().default(''),
+  notes:     text('notes').notNull().default(''),
+  lockedBy:  text('locked_by').notNull().default(''),
+  lockedAt:  timestamp('locked_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION C: LIMSY LEGAL INTELLIGENCE (Extended)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const limsyParties = pgTable('limsy_parties', {
+  id:          serial('id').primaryKey(),
+  tenantId:    integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  caseId:      integer('case_id').notNull().references(() => limsyCases.id, { onDelete: 'cascade' }),
+  role:        text('role').notNull().default('claimant'),
+  name:        text('name').notNull(),
+  designation: text('designation').notNull().default(''),
+  counsel:     text('counsel').notNull().default(''),
+  standing:    text('standing').notNull().default(''),
+});
+
+export const limsyDocuments = pgTable('limsy_documents', {
+  id:        serial('id').primaryKey(),
+  tenantId:  integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  caseId:    integer('case_id').notNull().references(() => limsyCases.id, { onDelete: 'cascade' }),
+  kind:      text('kind').notNull().default('pleading'),
+  title:     text('title').notNull(),
+  citation:  text('citation').notNull().default(''),
+  status:    text('status').notNull().default('draft'),
+  body:      text('body').notNull().default(''),
+  filedOn:   text('filed_on').notNull().default(''),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const limsyAuthorities = pgTable('limsy_authorities', {
+  id:        serial('id').primaryKey(),
+  tenantId:  integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  caseId:    integer('case_id').references(() => limsyCases.id, { onDelete: 'cascade' }),
+  kind:      text('kind').notNull().default('case'),
+  citation:  text('citation').notNull(),
+  court:     text('court').notNull().default(''),
+  year:      text('year').notNull().default(''),
+  holding:   text('holding').notNull().default(''),
+  pinCite:   text('pin_cite').notNull().default(''),
+  relevance: text('relevance').notNull().default(''),
+});
+
+export const limsyFrameworks = pgTable('limsy_frameworks', {
+  id:          serial('id').primaryKey(),
+  tenantId:    integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  caseId:      integer('case_id').references(() => limsyCases.id, { onDelete: 'set null' }),
+  name:        text('name').notNull(),
+  method:      text('method').notNull().default('IRAC'),
+  description: text('description').notNull().default(''),
+  nodes:       jsonb('nodes').$type<Array<{
+    id: string; kind: string; label: string; x: number; y: number;
+    config: Record<string, unknown>;
+  }>>().default([]),
+  edges:       jsonb('edges').$type<Array<{
+    id: string; from: string; to: string; label: string;
+  }>>().default([]),
+  status:      text('status').notNull().default('draft'),
+  version:     integer('version').notNull().default(1),
+  updatedAt:   timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const limsyTrials = pgTable('limsy_trials', {
+  id:         serial('id').primaryKey(),
+  tenantId:   integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  caseId:     integer('case_id').notNull().references(() => limsyCases.id, { onDelete: 'cascade' }),
+  phase:      text('phase').notNull().default('pretrial'),
+  inSession:  boolean('in_session').notNull().default(false),
+  bench:      text('bench').notNull().default(''),
+  transcript: jsonb('transcript').$type<Array<{
+    seat: string; speaker: string; text: string; at: string;
+  }>>().default([]),
+  exhibits:   jsonb('exhibits').$type<Array<{
+    id: string; title: string; admitted: boolean; kind: string;
+  }>>().default([]),
+  roster:     jsonb('roster').$type<Array<{
+    seat: string; name: string; counsel: string; role: string;
+  }>>().default([]),
+  rulings:    jsonb('rulings').$type<Array<{
+    text: string; at: string; judge: string;
+  }>>().default([]),
+  updatedAt:  timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const limsyCounselSessions = pgTable('limsy_counsel_sessions', {
+  id:        serial('id').primaryKey(),
+  tenantId:  integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  caseId:    integer('case_id').references(() => limsyCases.id, { onDelete: 'set null' }),
+  title:     text('title').notNull().default('Co-Counsel Session'),
+  messages:  jsonb('messages').$type<Array<{
+    role:    'user' | 'assistant';
+    content: string;
+    at:      string;
+  }>>().default([]),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPE EXPORTS — BMS MODULE & MIGRATION 0018 ADDITIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type BmsCourse          = typeof bmsCourses.$inferSelect;
@@ -959,4 +1295,14 @@ export type BmsDnsRecord       = typeof bmsDnsRecords.$inferSelect;
 export type BmsCodeRedCase     = typeof bmsCodeRedCases.$inferSelect;
 export type BmsAssignment      = typeof bmsAssignments.$inferSelect;
 export type BmsDocument        = typeof bmsDocuments.$inferSelect;
+export type BmsDocumentInsert  = typeof bmsDocuments.$inferInsert;
+export type BmsDocumentSelect  = typeof bmsDocuments.$inferSelect;
 export type BmsGate            = typeof bmsGates.$inferSelect;
+
+export type BuilderPageInsert         = typeof builderPages.$inferInsert;
+export type BuilderPageSelect         = typeof builderPages.$inferSelect;
+export type NidhivanEntityInsert      = typeof nidhivanEntities.$inferInsert;
+export type NidhivanEntitySelect      = typeof nidhivanEntities.$inferSelect;
+export type NidhivanJournalInsert     = typeof nidhivanJournals.$inferInsert;
+export type LimsyTrialInsert          = typeof limsyTrials.$inferInsert;
+export type LimsyCounselSessionInsert = typeof limsyCounselSessions.$inferInsert;
