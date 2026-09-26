@@ -86,7 +86,7 @@ const NAV: NavGroup[] = [
     title: "Nidhivan Finance",
     items: [
       { href: "/studio/nidhivan",            label: "Nidhivan Desk",    icon: "₹", hint: "Fintech & research command" },
-      { label: "CFO Cockpit", href: "/studio/nidhivan/cockpit" }, { href: "/studio/nidhivan/books",      label: "The Books",        icon: "▤", hint: "Ledger, journals, close",   minRole: "architect" },
+      { href: '/studio/nidhivan/cockpit', label: 'CFO Cockpit', icon: '◉', hint: 'Executive BI and AUM' }, { href: "/studio/nidhivan/books",      label: "The Books",        icon: "▤", hint: "Ledger, journals, close",   minRole: "architect" },
       { href: "/studio/nidhivan/boqs",       label: "BOQ / DPR",        icon: "▩", hint: "CPWD cost estimation" },
       { href: "/studio/nidhivan/research",   label: "Research",         icon: "◈", hint: "Equity, credit, fintech" },
       { href: "/studio/nidhivan/lab",        label: "Fintech Lab",      icon: "⚗", hint: "R&D sandbox to production", minRole: "developer" },
