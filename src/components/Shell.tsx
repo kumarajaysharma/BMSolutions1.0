@@ -56,7 +56,7 @@ const ROLE_RANK: Record<string, number> = {
 };
 
 function hasRole(actual: string, required: string): boolean {
-  return (ROLE_RANK[actual] ?? 99) <= (ROLE_RANK[required] ?? 0);
+  return (ROLE_RANK[(actual || "").toLowerCase()] ?? 0) <= (ROLE_RANK[required] ?? 0);
 }
 
 // ── Navigation definition ─────────────────────────────────────────────────────
@@ -146,7 +146,7 @@ export function Shell({
 }) {
   const pathname = usePathname();
   const router   = useRouter();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [palette, setPalette]         = useState(false);
   const [q, setQ]                     = useState("");
 
