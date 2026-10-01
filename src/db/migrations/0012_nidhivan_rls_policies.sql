@@ -1,1 +1,0 @@
-CREATE POLICY nidhivan_dprs_tenant_isolation ON nidhivan_dprs FOR ALL TO studio_app USING (tenant_id = current_setting('app.current_tenant_id', true)::integer) WITH CHECK (tenant_id = current_setting('app.current_tenant_id', true)::integer); 

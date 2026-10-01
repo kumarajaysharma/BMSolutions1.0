@@ -1,14 +1,14 @@
-"use client";
+﻿"use client";
 
 /**
  * src/components/Shell.tsx
  *
- * BNLV Group Enterprise Shell — Navigation & Layout Wrapper
+ * BNLV Group Enterprise Shell â€” Navigation & Layout Wrapper
  * =========================================================
  * Ported from full-stack-visual-builder-ide/src/components/Shell.tsx
  * with the following BNLV-mandatory adaptations:
  *
- *   AUTH-001  AUTH_ENFORCED flag removed — BNLV middleware ALWAYS enforces
+ *   AUTH-001  AUTH_ENFORCED flag removed â€” BNLV middleware ALWAYS enforces
  *             auth via JWT HS256. The shell receives a verified user object
  *             from the server layout; no fallback identity is ever used.
  *
@@ -17,12 +17,12 @@
  *             route which clears bms_session.
  *
  *   NAV-001   Route paths updated to BNLV studio namespace:
- *               builder routes → /studio/bms/*
- *               nidhivan routes → /studio/nidhivan/*
- *               limsy routes → /studio/limsy/*
+ *               builder routes â†’ /studio/bms/*
+ *               nidhivan routes â†’ /studio/nidhivan/*
+ *               limsy routes â†’ /studio/limsy/*
  *
  *   NAV-002   Documentation Engine added to Build group:
- *               /studio/bms/documents → Documentation Engine
+ *               /studio/bms/documents â†’ Documentation Engine
  *
  *   NAV-003   All 17 new tables from migration 0018 have corresponding
  *             nav entries, stubbed until pages are built.
@@ -37,7 +37,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type NavItem = {
   href:  string;
@@ -49,7 +49,7 @@ type NavItem = {
 
 type NavGroup = { title: string; items: NavItem[] };
 
-// ── RBAC helper ───────────────────────────────────────────────────────────────
+// â”€â”€ RBAC helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const ROLE_RANK: Record<string, number> = {
   owner: 0, admin: 1, architect: 2, developer: 3, designer: 4, viewer: 5,
@@ -59,77 +59,78 @@ function hasRole(actual: string, required: string): boolean {
   return (ROLE_RANK[(actual || "").toLowerCase()] ?? 0) <= (ROLE_RANK[required] ?? 0);
 }
 
-// ── Navigation definition ─────────────────────────────────────────────────────
+// â”€â”€ Navigation definition â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const NAV: NavGroup[] = [
   {
     title: "Studio",
     items: [
-      { href: "/studio",          label: "Command Centre",  icon: "◎", hint: "Group delivery signal" },
-      { href: "/studio/bms",      label: "BMS Workspace",  icon: "◫", hint: "BMSolutions operations" },
-      { href: "/studio/bms/projects", label: "Programmes", icon: "◫", hint: "Client engagements" },
-      { href: "/studio/bms/clients",  label: "Clients",    icon: "◐", hint: "Revenue portfolio", minRole: "developer" },
-      { href: "/studio/bms/team",     label: "Studio Team",icon: "◔", hint: "People & allocation", minRole: "developer" },
+      { href: "/studio",          label: "Command Centre",  icon: "â—Ž", hint: "Group delivery signal" },
+      { href: "/studio/bms",      label: "BMS Workspace",  icon: "â—«", hint: "BMSolutions operations" },
+      { href: "/studio/bms/projects", label: "Programmes", icon: "â—«", hint: "Client engagements" },
+      { href: "/studio/bms/clients",  label: "Clients",    icon: "â—", hint: "Revenue portfolio", minRole: "developer" },
+      { href: "/studio/bms/team",     label: "Studio Team",icon: "â—”", hint: "People & allocation", minRole: "developer" },
     ],
   },
   {
     title: "Build",
     items: [
-      { href: "/studio/bms/builder",    label: "Visual Builder",     icon: "✎", hint: "Canvas composition",          minRole: "developer" },
-      { href: "/studio/bms/library",    label: "Block Library",      icon: "⬡", hint: "Design system",               minRole: "developer" },
-      { href: "/studio/bms/documents",  label: "Documentation",      icon: "D", hint: "4-phase doc engine · AI",     minRole: "developer" },
-      { href: "/studio/bms/marketplace",label: "Customize",          icon: "⊞", hint: "Skills, connectors & plugins" },
-      { href: "/studio/bms/tasks",      label: "Delivery Board",     icon: "☰", hint: "Kanban execution" },
+      { href: "/studio/bms/builder",    label: "Visual Builder",     icon: "âœŽ", hint: "Canvas composition",          minRole: "developer" },
+      { href: "/studio/bms/library",    label: "Block Library",      icon: "â¬¡", hint: "Design system",               minRole: "developer" },
+      { href: "/studio/bms/documents",  label: "Documentation",      icon: "D", hint: "4-phase doc engine Â· AI",     minRole: "developer" },
+      { href: "/studio/bms/marketplace",label: "Customize",          icon: "âŠž", hint: "Skills, connectors & plugins" },
+      { href: "/studio/bms/tasks",      label: "Delivery Board",     icon: "â˜°", hint: "Kanban execution" },
     ],
   },
   {
     title: "Nidhivan Finance",
     items: [
-      { href: "/studio/nidhivan",            label: "Nidhivan Desk",    icon: "₹", hint: "Fintech & research command" },
-      { href: '/studio/nidhivan/cockpit', label: 'CFO Cockpit', icon: '◉', hint: 'Executive BI and AUM' }, { href: "/studio/nidhivan/books",      label: "The Books",        icon: "▤", hint: "Ledger, journals, close",   minRole: "architect" },
-      { href: "/studio/nidhivan/boqs",       label: "BOQ / DPR",        icon: "▩", hint: "CPWD cost estimation" },
-      { href: "/studio/nidhivan/research",   label: "Research",         icon: "◈", hint: "Equity, credit, fintech" },
-      { href: "/studio/nidhivan/lab",        label: "Fintech Lab",      icon: "⚗", hint: "R&D sandbox to production", minRole: "developer" },
-      { href: "/studio/nidhivan/counsel",    label: "Fin Co-Counsel",   icon: "◆", hint: "CFO & accountant AI",       minRole: "architect" },
-      { href: "/studio/nidhivan/connectors", label: "Fin Connectors",   icon: "⊞", hint: "Stripe, QB, S&P, IBKR",   minRole: "admin" },
+      { href: "/studio/nidhivan",            label: "Nidhivan Desk",    icon: "â‚¹", hint: "Fintech & research command" },
+      { href: '/studio/nidhivan/cockpit', label: 'CFO Cockpit', icon: 'â—‰', hint: 'Executive BI and AUM' }, { href: "/studio/nidhivan/books",      label: "The Books",        icon: "â–¤", hint: "Ledger, journals, close",   minRole: "architect" },
+      { href: "/studio/nidhivan/boqs",       label: "BOQ / DPR",        icon: "â–©", hint: "CPWD cost estimation" },
+      { href: "/studio/nidhivan/research",   label: "Research",         icon: "â—ˆ", hint: "Equity, credit, fintech" },
+      { href: "/studio/nidhivan/lab",        label: "Fintech Lab",      icon: "âš—", hint: "R&D sandbox to production", minRole: "developer" },
+      { href: "/studio/nidhivan/counsel",    label: "Fin Co-Counsel",   icon: "â—†", hint: "CFO & accountant AI",       minRole: "architect" },
+      { href: "/studio/nidhivan/connectors", label: "Fin Connectors",   icon: "âŠž", hint: "Stripe, QB, S&P, IBKR",   minRole: "admin" },
     ],
   },
   {
     title: "LIMSY Legal",
     items: [
-      { href: "/studio/limsy",              label: "LIMSY Studio",    icon: "⚖", hint: "Legal intelligence command" },
-      { href: "/studio/limsy/matters",      label: "The Docket",      icon: "§", hint: "Case inception to closure" },
-      { href: "/studio/limsy/trial",        label: "Trial Room",      icon: "▣", hint: "Court in session",         minRole: "architect" },
-      { href: "/studio/limsy/frameworks",   label: "Frameworks",      icon: "¶", hint: "IRAC / CREAC builder",     minRole: "architect" },
-      { href: "/studio/limsy/counsel",      label: "Co-Counsel",      icon: "◆", hint: "LIMSY legal intelligence", minRole: "architect" },
-      { href: "/studio/limsy/connectors",   label: "Legal Connectors",icon: "⊞", hint: "Harvey, CoCounsel, Everlaw", minRole: "admin" },
+      { href: "/studio/limsy",              label: "LIMSY Studio",    icon: "âš–", hint: "Legal intelligence command" },
+      { href: "/studio/limsy/matters",      label: "The Docket",      icon: "Â§", hint: "Case inception to closure" },
+      { href: "/studio/limsy/trial",        label: "Trial Room",      icon: "â–£", hint: "Court in session",         minRole: "architect" },
+      { href: "/studio/limsy/frameworks",   label: "Frameworks",      icon: "Â¶", hint: "IRAC / CREAC builder",     minRole: "architect" },
+      { href: "/studio/limsy/counsel",      label: "Co-Counsel",      icon: "â—†", hint: "LIMSY legal intelligence", minRole: "architect" },
+      { href: "/studio/limsy/connectors",   label: "Legal Connectors",icon: "âŠž", hint: "Harvey, CoCounsel, Everlaw", minRole: "admin" },
     ],
   },
   {
     title: "Automate",
     items: [
-      { href: "/studio/bms/agentic",    label: "Agentic AI",       icon: "◆", hint: "Enterprise agent platform", minRole: "developer" },
-      { href: "/studio/bms/workflows",  label: "Workflow Builder",  icon: "⚡", hint: "Visual automation canvas",  minRole: "developer" },
+      { href: "/studio/bms/agentic",    label: "Agentic AI",       icon: "â—†", hint: "Enterprise agent platform", minRole: "developer" },
+    { href: '/studio/bms/academy', label: 'BMS Academy', icon: 'ΓùÄ', hint: 'Executive LMS and certifications' },
+      { href: "/studio/bms/workflows",  label: "Workflow Builder",  icon: "âš¡", hint: "Visual automation canvas",  minRole: "developer" },
     ],
   },
   {
     title: "Ship",
     items: [
-      { href: "/studio/bms/deployments", label: "Release Console", icon: "▲", hint: "Pipelines & rollback",     minRole: "developer" },
-      { href: "/studio/bms/hosting",     label: "Hosting",         icon: "☁", hint: "Container & DNS mgmt",    minRole: "architect" },
+      { href: "/studio/bms/deployments", label: "Release Console", icon: "â–²", hint: "Pipelines & rollback",     minRole: "developer" },
+      { href: "/studio/bms/hosting",     label: "Hosting",         icon: "â˜", hint: "Container & DNS mgmt",    minRole: "architect" },
     ],
   },
   {
     title: "Governance",
     items: [
-      { href: "/studio/bms/release",     label: "Release Evidence", icon: "◈", hint: "Live QA and release sign-off", minRole: "architect" },
-      { href: "/studio/bms/pendencies",  label: "Risk Register",    icon: "⚠", hint: "Tech debt & blockers",         minRole: "admin" },
-      { href: "/studio/bms/admin",       label: "Super Admin",      icon: "⌘", hint: "Platform administration",      minRole: "admin" },
+      { href: "/studio/bms/release",     label: "Release Evidence", icon: "â—ˆ", hint: "Live QA and release sign-off", minRole: "architect" },
+      { href: "/studio/bms/pendencies",  label: "Risk Register",    icon: "âš ", hint: "Tech debt & blockers",         minRole: "admin" },
+      { href: "/studio/bms/admin",       label: "Super Admin",      icon: "âŒ˜", hint: "Platform administration",      minRole: "admin" },
     ],
   },
 ];
 
-// ── Shell component ───────────────────────────────────────────────────────────
+// â”€â”€ Shell component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function Shell({
   children,
@@ -166,7 +167,7 @@ export function Shell({
     (href !== "/studio" && pathname.startsWith(href + "/")) ||
     (href !== "/studio" && pathname === href);
 
-  // ⌘K command palette
+  // âŒ˜K command palette
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -189,7 +190,7 @@ export function Shell({
     router.push("/login");
   }
 
-  // ── Avatar ──────────────────────────────────────────────────────────────────
+  // â”€â”€ Avatar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const initials = user.name.split(" ").map(p => p[0]).join("").slice(0, 2).toUpperCase();
 
   return (
@@ -197,7 +198,7 @@ export function Shell({
       background: "#080D18", color: "#DDE5EF",
       fontFamily: "'Inter', 'DM Sans', system-ui, sans-serif" }}>
 
-      {/* ── SIDEBAR ────────────────────────────────────────────────────────── */}
+      {/* â”€â”€ SIDEBAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <nav style={{
         width: sidebarOpen ? 220 : 52, flexShrink: 0,
         background: "#0C1425", borderRight: "1px solid #162340",
@@ -237,7 +238,7 @@ export function Shell({
               {group.items.map(item => {
                 const active = isActive(item.href);
                 return (
-                  <Link key={item.href} href={item.href} title={sidebarOpen ? "" : `${item.label} — ${item.hint}`}
+                  <Link key={item.href} href={item.href} title={sidebarOpen ? "" : `${item.label} â€” ${item.hint}`}
                     style={{
                       display: "flex", alignItems: "center", gap: 10,
                       padding: sidebarOpen ? "7px 14px" : "7px 14px",
@@ -275,7 +276,7 @@ export function Shell({
               </div>
               <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8,
                 color: "#C9A84C", letterSpacing: "0.08em" }}>
-                {user.role} · {user.brand}
+                {user.role} Â· {user.brand}
               </div>
             </div>
           )}
@@ -283,13 +284,13 @@ export function Shell({
             <button onClick={logout} title="Sign out"
               style={{ background: "none", border: "none", cursor: "pointer",
                 color: "#4A6080", fontSize: 14, padding: 2, flexShrink: 0 }}>
-              ⏻
+              â»
             </button>
           )}
         </div>
       </nav>
 
-      {/* ── MAIN CONTENT ───────────────────────────────────────────────────── */}
+      {/* â”€â”€ MAIN CONTENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
 
         {/* Top bar */}
@@ -300,18 +301,18 @@ export function Shell({
           {/* Breadcrumb from pathname */}
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
             color: "#4A6080", letterSpacing: "0.1em" }}>
-            {pathname.split("/").filter(Boolean).join(" › ").toUpperCase() || "STUDIO"}
+            {pathname.split("/").filter(Boolean).join(" â€º ").toUpperCase() || "STUDIO"}
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {/* ⌘K shortcut hint */}
+            {/* âŒ˜K shortcut hint */}
             <button onClick={() => setPalette(true)} style={{
               background: "#0F1B30", border: "1px solid #162340", borderRadius: 5,
               padding: "4px 10px", color: "#4A6080",
               fontFamily: "'JetBrains Mono', monospace", fontSize: 8,
               cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
             }}>
-              <span>⌘K</span>
+              <span>âŒ˜K</span>
               <span style={{ color: "#8DA0B8" }}>Search</span>
             </button>
           </div>
@@ -323,7 +324,7 @@ export function Shell({
         </main>
       </div>
 
-      {/* ── ⌘K COMMAND PALETTE ─────────────────────────────────────────────── */}
+      {/* â”€â”€ âŒ˜K COMMAND PALETTE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {palette && (
         <div onClick={() => setPalette(false)} style={{
           position: "fixed", inset: 0, background: "rgba(8,13,24,0.85)",
@@ -335,9 +336,9 @@ export function Shell({
             borderRadius: 12, overflow: "hidden", boxShadow: "0 32px 80px rgba(0,0,0,0.6)",
           }}>
             <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #162340" }}>
-              <span style={{ padding: "12px 14px", color: "#4A6080", fontSize: 14 }}>⌕</span>
+              <span style={{ padding: "12px 14px", color: "#4A6080", fontSize: 14 }}>âŒ•</span>
               <input autoFocus value={q} onChange={e => setQ(e.target.value)}
-                placeholder="Search pages…"
+                placeholder="Search pagesâ€¦"
                 style={{ flex: 1, background: "none", border: "none", outline: "none",
                   padding: "12px 0", color: "#DDE5EF", fontSize: 13,
                   fontFamily: "'Inter', sans-serif" }} />

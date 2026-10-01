@@ -38,3 +38,8 @@ run_tests.bat
 test-endpoints.* 
 Thumbs.db
 tsc-*.txt 
+.env.local.admin
+.env.vercel-prod
+.env.*.admin
+.env.*.prod
+*.env.backup

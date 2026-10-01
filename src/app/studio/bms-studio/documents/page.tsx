@@ -1,4 +1,4 @@
-// REDIRECT: /studio/bms-academy -> /studio/bms/academy
+// REDIRECT: /studio/bms-studio/documents -> /studio/bms/documents
 // Legacy route - kept for backward compatibility.
 // Remove this file after 30-day deprecation window.
 import { redirect } from 'next/navigation';
@@ -6,5 +6,5 @@ import { redirect } from 'next/navigation';
 export const dynamic = 'force-dynamic';
 
 export default function LegacyRedirect() {
-  redirect('/studio/bms/academy');
+  redirect('/studio/bms/documents');
 }
