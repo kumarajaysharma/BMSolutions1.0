@@ -1,11 +1,11 @@
-/**
+﻿/**
  * src/app/api/bms/lms/progress/route.ts
  * BMS Academy — Lesson Progress Tracking
  * GET ?lessonId=<id>  POST (mark complete/incomplete)
  * Also updates enrollment progress % on completion.
  */
 import { NextResponse }       from "next/server";
-import { eq, and, sql }       from "drizzle-orm";
+import { eq, and, sql , isNotNull }       from "drizzle-orm";
 import { withTenant }         from "@/lib/tenant";
 import { withTenant as dbTx } from "@/db";
 import { withErrorHandler }   from "@/lib/api-handler";
@@ -73,7 +73,7 @@ const _POST = withTenant(async (req, ctx) => {
       .where(and(
         eq(bmsModules.courseId,           courseId),
         eq(bmsLessonProgress.userId,      ctx.userId),
-        eq(bmsLessonProgress.completed,   true)
+        isNotNull(bmsLessonProgress.completedAt)
       ));
     const done = doneRes[0]?.count ?? 0;
 

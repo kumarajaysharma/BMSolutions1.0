@@ -1,4 +1,4 @@
-/**
+﻿/**
  * src/app/api/limsy/hearings/route.ts
  *
  * LIMSY Supreme Court Standard — Cause-List & Hearing Management API
@@ -202,7 +202,7 @@ async function _PATCH(req: NextRequest) {
       if (isNaN(actualDate.getTime())) {
         return NextResponse.json({ error: "Invalid actualDate format." }, { status: 400 });
       }
-      patch.actualDate = actualDate;
+      patch.actualDate = actualDate.toISOString().split('T')[0];
     }
   }
 

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * src/db/seed-production-verticals.ts
  * Production Seeder for Nidhivan Consulting & Vihang Creations
  * Sprint Closure: July 31, 2026 | Status: P3 Production-Final
@@ -42,13 +42,9 @@ export async function executeProductionSeed(targetTenantId: number, executingUse
       const projectData: NewNidhivanProject = {
         tenantId: targetTenantId,
         projectCode: "BNLV-INFRA-2026",
-        projectTitle: "New Delhi Smart City Hub - Core Micro-Grid",
-        projectType: "infrastructure",
-        sector: "Urban Development",
-        implementingAgency: "Delhi Development Authority",
-        projectState: "New Delhi",
-        totalCostPaise: 89000000000, 
-        createdBy: executingUserId,
+        name: "New Delhi Smart City Hub - Core Micro-Grid",
+        category: "infrastructure",
+        totalBudgetPaise: 89000000000, 
         status: "dpr_preparation"
       };
 
@@ -57,7 +53,7 @@ export async function executeProductionSeed(targetTenantId: number, executingUse
         .values(projectData)
         .onConflictDoUpdate({
           target: [nidhivanProjects.tenantId, nidhivanProjects.projectCode],
-          set: { projectTitle: projectData.projectTitle, totalCostPaise: projectData.totalCostPaise }
+          set: { name: projectData.name, totalBudgetPaise: projectData.totalBudgetPaise }
         })
         .returning();
 
@@ -78,18 +74,16 @@ export async function executeProductionSeed(targetTenantId: number, executingUse
       const dprData: NewNidhivanDpr = {
         tenantId: targetTenantId,
         projectId: project.id,
-        dprNumber: "DPR-BNLV-2026-001",
+        dprCode: "DPR-BNLV-2026-001",
         title: "Detailed Project Report - Smart City Micro-Grid Phase I",
-        financialYear: "2026-2027",
         totalProjectCostPaise: 89000000000,
-        createdBy: executingUserId,
         status: "draft"
       };
 
       const [existingDpr] = await tx
         .select()
         .from(nidhivanDprs)
-        .where(and(eq(nidhivanDprs.projectId, project.id), eq(nidhivanDprs.dprNumber, dprData.dprNumber)))
+        .where(and(eq(nidhivanDprs.projectId, project.id), eq(nidhivanDprs.dprCode, dprData.dprCode ?? '')))
         .limit(1);
 
       if (!existingDpr) {
@@ -102,7 +96,7 @@ export async function executeProductionSeed(targetTenantId: number, executingUse
           tenantId: targetTenantId,
           actor: String(executingUserId),
           action: "seed.nidhivan_dpr.insert",
-          target: dprData.dprNumber,
+          target: dprData.dprCode,
           severity: "info",
           ipAddress: clientIp,
           metadata: {

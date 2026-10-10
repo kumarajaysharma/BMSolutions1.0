@@ -1,4 +1,4 @@
-/**
+﻿/**
  * src/db/run-seed.ts
  * BNLV Group Enterprise — CLI Execution Wrapper (Native Admin Seeder)
  *
@@ -77,13 +77,9 @@ async function run() {
           .values({
             tenantId: TARGET_TENANT_ID,
             projectCode: "BNLV-INFRA-2026",
-            projectTitle: "New Delhi Smart City Hub - Core Micro-Grid",
-            projectType: "infrastructure",
-            sector: "Urban Development",
-            implementingAgency: "Delhi Development Authority",
-            projectState: "New Delhi",
-            totalCostPaise: 89000000000,
-            createdBy: EXECUTING_USER_ID,
+            name: "New Delhi Smart City Hub - Core Micro-Grid",
+            category: "infrastructure",
+            totalBudgetPaise: 89000000000,
             status: "dpr_preparation"
           })
           .returning();
@@ -112,7 +108,7 @@ async function run() {
         .from(nidhivanDprs)
         .where(and(
           eq(nidhivanDprs.projectId, project.id),
-          eq(nidhivanDprs.dprNumber, dprNumber)
+          eq(nidhivanDprs.dprCode, dprNumber)
         ))
         .limit(1);
 
@@ -120,11 +116,9 @@ async function run() {
         await tx.insert(nidhivanDprs).values({
           tenantId: TARGET_TENANT_ID,
           projectId: project.id,
-          dprNumber: dprNumber,
+          dprCode: dprNumber,
           title: "Detailed Project Report - Smart City Micro-Grid Phase I",
-          financialYear: "2026-2027",
           totalProjectCostPaise: 89000000000,
-          createdBy: EXECUTING_USER_ID,
           status: "draft"
         });
 

@@ -119,7 +119,7 @@ const makeSeedMessages = (channel: ChannelId): Message[] => ({
       'Bench constituted: Hon\'ble Justice R.V. Iyer (Presiding) + Hon\'ble Justice P.K. Rao. Matter taken up.',
       kind: 'system', channel: 'PROCEEDING', is_pinned: false, created_at: '10:01 IST' },
   ],
-}[channel]);
+}[channel] as Message[]);
 
 const ROLE_RANK: Record<string, number> = {
   owner: 0, admin: 1, architect: 2, developer: 3, designer: 4, viewer: 5,

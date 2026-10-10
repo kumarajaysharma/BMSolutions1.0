@@ -1,4 +1,4 @@
-/**
+﻿/**
  * src/app/api/bms/studio/addons/route.ts
  * BMS Studio — Addon / Skill Registry
  * GET  POST (install)  PATCH ?addonId=<id> (update meta)  DELETE ?addonId=<id>
@@ -71,7 +71,7 @@ const _PATCH = withTenant(async (req, ctx) => {
       .set({ ...parsed.data, syncedAt: new Date() })
       .where(and(
         eq(bmsStudioAddons.tenantId, ctx.tenantId),
-        eq(bmsStudioAddons.addonId,  addonId)
+        eq(bmsStudioAddons.addonId, Number(addonId))
       ))
       .returning()
   );
@@ -92,7 +92,7 @@ const _DELETE = withTenant(async (req, ctx) => {
       .set({ installed: false, syncedAt: new Date() })
       .where(and(
         eq(bmsStudioAddons.tenantId, ctx.tenantId),
-        eq(bmsStudioAddons.addonId,  addonId)
+        eq(bmsStudioAddons.addonId, Number(addonId))
       ))
       .returning()
   );

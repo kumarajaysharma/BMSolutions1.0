@@ -1,10 +1,20 @@
 #!/usr/bin/env node
 /**
  * scripts/provision-tenant.mjs
- * 
- * Safely provisions a tenant workspace and an administrative user 
- * addressing schema constraints for name and composite unique indexes.
- * Updated to generate $scrypt$ hashes and correctly assign the admin role.
+ *
+ * Safely provisions a tenant workspace and an administrative user.
+ *
+ * FIX (2026-10-09): salt and hash now encoded as base64url (not base64)
+ *   to match the verifyScryptHash() decoder in login/route.ts.
+ *   Standard base64 uses +/; base64url uses -_. The mismatch caused
+ *   Buffer.from(parts[3], "base64url") to mis-decode +/→ garbage,
+ *   producing wrong key bytes and timingSafeEqual() failures for ~100%
+ *   of 64-byte hashes.
+ *
+ * FIX (2026-10-09): tenant INSERT now explicitly sets status = 'active'
+ *   to satisfy the login check: tenantRows[0].status === "active".
+ *   Without this, provisioned tenants cannot log in if the column default
+ *   is anything other than 'active'.
  */
 
 import dotenv from "dotenv";
@@ -14,7 +24,6 @@ import pg from "pg";
 import crypto from "crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Prioritize loading .env.local to access DATABASE_URL_UNPOOLED
 dotenv.config({ path: path.resolve(__dirname, "../.env.local") });
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
@@ -24,69 +33,85 @@ function getArg(name) {
   return idx !== -1 && args[idx + 1] ? args[idx + 1] : null;
 }
 
-const slug = getArg("slug");
-const name = getArg("name");
-const plan = getArg("plan") || "enterprise";
-const email = getArg("admin-email");
-const password = getArg("admin-password");
+const slug          = getArg("slug");
+const name          = getArg("name");
+const plan          = getArg("plan") || "enterprise";
+const email         = getArg("admin-email");
+const password      = getArg("admin-password");
 
 if (!slug || !name || !email || !password) {
-  console.error("❌ Missing required arguments.");
-  console.error("Usage: node scripts/provision-tenant.mjs --slug <slug> --name <name> --plan <plan> --admin-email <email> --admin-password <password>");
+  console.error("Missing required arguments.");
+  console.error(
+    "Usage: node scripts/provision-tenant.mjs " +
+    "--slug <slug> --name <name> --plan <plan> " +
+    "--admin-email <email> --admin-password <password>"
+  );
   process.exit(1);
 }
 
 const url = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
 if (!url) {
-  console.error("❌ Database URL is not set in environment variables.");
+  console.error("DATABASE_URL_UNPOOLED is not set.");
   process.exit(1);
 }
 
-// Use standard pg client with SSL enabled for Neon/Supabase compatibility
-const pool = new pg.Pool({ 
+const pool = new pg.Pool({
   connectionString: url,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
 });
 
-// Helper to generate $scrypt$ hashes compatible with BNLV auth requirements
+/**
+ * Generates a $scrypt$ hash using base64url encoding throughout.
+ * MUST match verifyScryptHash() in src/app/api/auth/login/route.ts:
+ *   Buffer.from(parts[3], "base64url")  ← salt
+ *   Buffer.from(parts[4], "base64url")  ← derivedKey
+ */
 function hashPasswordScrypt(plainText) {
   const salt = crypto.randomBytes(16);
   const N = 16384, r = 8, p = 1;
-  const hash = crypto.scryptSync(plainText, salt, 64, { N, r, p });
-  return `$scrypt$N=${N},r=${r},p=${p}$${salt.toString("base64")}$${hash.toString("base64")}`;
+  // 32-byte derived key — matches generateScryptHash() in login route
+  const dk = crypto.scryptSync(plainText, salt, 32, {
+    N, r, p,
+    maxmem: 64 * 1024 * 1024,
+  });
+  // base64url — NO +/ padding characters
+  return `$scrypt$N=${N},r=${r},p=${p}$${salt.toString("base64url")}$${dk.toString("base64url")}`;
 }
 
 async function main() {
   try {
-    console.log(`⏳ Provisioning tenant workspace '${slug}' (${name})...`);
+    console.log(`Provisioning tenant '${slug}' (${name})...`);
 
-    // 1. Check or Insert Tenant
+    // 1. Upsert Tenant — always set status = 'active'
     let tenantId;
-    const existingTenant = await pool.query(`SELECT id FROM tenants WHERE slug = $1`, [slug]);
-    
-    if (existingTenant.rows.length > 0) {
-      tenantId = existingTenant.rows[0].id;
+    const existing = await pool.query(
+      `SELECT id FROM tenants WHERE slug = $1`,
+      [slug]
+    );
+
+    if (existing.rows.length > 0) {
+      tenantId = existing.rows[0].id;
       await pool.query(
-        `UPDATE tenants SET name = $1, plan = $2 WHERE id = $3`,
+        `UPDATE tenants SET name = $1, plan = $2, status = 'active' WHERE id = $3`,
         [name, plan, tenantId]
       );
-      console.log(`✅ Tenant updated with ID: ${tenantId}`);
+      console.log(`Tenant updated — ID: ${tenantId}, status set to active`);
     } else {
-      const tenantRes = await pool.query(
-        `INSERT INTO tenants (slug, name, plan, created_at) VALUES ($1, $2, $3, NOW()) RETURNING id`,
+      const res = await pool.query(
+        `INSERT INTO tenants (slug, name, plan, status, created_at)
+         VALUES ($1, $2, $3, 'active', NOW())
+         RETURNING id`,
         [slug, name, plan]
       );
-      tenantId = tenantRes.rows[0].id;
-      console.log(`✅ Tenant created with ID: ${tenantId}`);
+      tenantId = res.rows[0].id;
+      console.log(`Tenant created — ID: ${tenantId}`);
     }
 
-    // 2. Hash password securely using scrypt (required by diagnostic)
+    // 2. Hash password — base64url encoded, 32-byte dk
     const passwordHash = hashPasswordScrypt(password);
-    
-    // 3. Apply explicit Super Admin Developer identity
-    const userName = "पंडित अजय शर्मा";
 
-    // 4. Check or Insert User using composite tenant_id and email check
+    // 3. Upsert Admin User
+    const userName = "पंडित अजय शर्मा";
     const existingUser = await pool.query(
       `SELECT id FROM users WHERE tenant_id = $1 AND email = $2`,
       [tenantId, email]
@@ -98,18 +123,20 @@ async function main() {
         `UPDATE users SET name = $1, password_hash = $2, role = 'admin' WHERE id = $3`,
         [userName, passwordHash, userId]
       );
-      console.log(`✅ Admin user updated: ${email} (ID: ${userId})`);
+      console.log(`Admin updated — ${email} (ID: ${userId})`);
     } else {
       const userRes = await pool.query(
-        `INSERT INTO users (tenant_id, name, email, password_hash, role, created_at) VALUES ($1, $2, $3, $4, 'admin', NOW()) RETURNING id`,
+        `INSERT INTO users (tenant_id, name, email, password_hash, role, active, created_at)
+         VALUES ($1, $2, $3, $4, 'admin', true, NOW())
+         RETURNING id`,
         [tenantId, userName, email, passwordHash]
       );
-      console.log(`✅ Admin user created: ${email} (ID: ${userRes.rows[0].id})`);
+      console.log(`Admin created — ${email} (ID: ${userRes.rows[0].id})`);
     }
 
-    console.log(`🎉 Successfully provisioned workspace: ${slug}`);
+    console.log(`Workspace provisioned: ${slug} (tenant ID: ${tenantId})`);
   } catch (err) {
-    console.error("❌ Provisioning failed:", err);
+    console.error("Provisioning failed:", err);
     process.exit(1);
   } finally {
     await pool.end();

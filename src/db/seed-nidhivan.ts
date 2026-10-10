@@ -1,4 +1,4 @@
-/**
+﻿/**
  * src/db/seed-nidhivan.ts
  * Bootstraps the Nidhivan Consulting Track 2 Workspace with a CPWD Schedule of Rates hierarchy.
  */
@@ -91,37 +91,29 @@ async function seedNidhivan() {
       const [project] = await tx.insert(nidhivanProjects).values({
         tenantId: tenantId,
         projectCode: "NH44-PKG1",
-        projectTitle: "NH-44 Highway Expansion (Package 1)",
-        projectType: "infrastructure",
-        sector: "Transport",
-        implementingAgency: "National Highways Authority of India",
-        projectState: "New Delhi",
-        totalCostPaise: 4676075000,
-        createdBy: adminUserId,
+        name: "NH-44 Highway Expansion (Package 1)",
+        category: "infrastructure",
+        totalBudgetPaise: 4676075000,
         status: "in_progress"
       }).returning();
-      console.log(`✅ Created Project: ${project.projectTitle}`);
+      console.log(`✅ Created Project: ${project.name}`);
 
       const [dpr] = await tx.insert(nidhivanDprs).values({
         tenantId: tenantId,
         projectId: project.id,
-        dprNumber: "DPR-NH44-01",
+        dprCode: "DPR-NH44-01",
         title: "Detailed Project Report - NH-44 Widening",
-        financialYear: "2026-2027",
         totalProjectCostPaise: 4676075000,
-        createdBy: adminUserId,
         status: "draft"
       }).returning();
-      console.log(`✅ Created DPR Record: ${dpr.dprNumber}`);
+      console.log(`✅ Created DPR Record: ${dpr.dprCode}`);
 
       const [boq] = await tx.insert(nidhivanBoqs).values({
         tenantId: tenantId,
         projectId: project.id,
         dprId: dpr.id,
-        boqNumber: "BOQ-NH44-01",
         title: "Master Bill of Quantities (CPWD DSR 2023 Baseline)",
         totalAmountPaise: 4676075000,
-        createdBy: adminUserId,
         status: "draft"
       }).returning();
       console.log(`✅ Created BOQ Record: ${boq.title}`);
@@ -130,75 +122,68 @@ async function seedNidhivan() {
         {
           tenantId: tenantId,
           boqId: boq.id,
-          itemNumber: 1,
+          itemNumber: "1",
           sectionCode: "SH-01",
           isSectionHeader: true,
           description: "SUB-HEAD 01: EARTHWORK",
           quantity: 0,
-          unitRatePaise: 0,
+          ratePaise: 0,
           amountPaise: 0,
         },
         {
           tenantId: tenantId,
           boqId: boq.id,
-          itemNumber: 2,
+          itemNumber: "2",
           sectionCode: "SH-01",
           isSectionHeader: false,
           description: "Earth work in excavation by mechanical means (Hydraulic excavator)/manual means over areas...",
           unit: "cum",
           quantity: 4500.500,
-          unitRatePaise: 21500,
+          ratePaise: 21500,
           amountPaise: 96760750,
           rateRef: "DSR 2023 Item 2.6.1"
         },
         {
           tenantId: tenantId,
           boqId: boq.id,
-          itemNumber: 3,
+          itemNumber: "3",
           sectionCode: "SH-01",
           isSectionHeader: false,
           description: "Filling available excavated earth (excluding rock) in trenches, plinth, sides of foundations etc...",
           unit: "cum",
           quantity: 1200.000,
-          unitRatePaise: 18550,
+          ratePaise: 18550,
           amountPaise: 22260000,
           rateRef: "DSR 2023 Item 2.25"
         },
         {
           tenantId: tenantId,
           boqId: boq.id,
-          itemNumber: 4,
+          itemNumber: "4",
           sectionCode: "SH-02",
           isSectionHeader: true,
           description: "SUB-HEAD 02: CONCRETE WORK",
           quantity: 0,
-          unitRatePaise: 0,
+          ratePaise: 0,
           amountPaise: 0,
         },
         {
           tenantId: tenantId,
           boqId: boq.id,
-          itemNumber: 5,
+          itemNumber: "5",
           sectionCode: "SH-02",
           isSectionHeader: false,
           description: "Providing and laying in position cement concrete of specified grade - 1:1.5:3.",
           unit: "cum",
           quantity: 540.250,
-          unitRatePaise: 645000,
+          ratePaise: 645000,
           amountPaise: 348461250,
           rateRef: "DSR 2023 Item 4.1.2"
         }
       ]);
       console.log(`✅ Seeded CPWD DSR Execution Items`);
       
-      await tx.insert(nidhivanFinancialMetrics).values({
-        tenantId: tenantId,
-        projectId: project.id,
-        reportedBy: adminUserId,
-        reportingPeriod: "Q1-2026",
-        projectedIrrPercent: "14.50",
-        reportedAt: new Date(),
-      });
+      await tx.insert(nidhivanFinancialMetrics).values({ tenantId, entityId: project.id, period: "Q1-2026" });
       console.log(`✅ Seeded Financial Metrics`);
 
       await tx.insert(auditLogs).values({

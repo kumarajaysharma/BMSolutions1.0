@@ -1,4 +1,4 @@
-/**
+﻿/**
  * src/components/workspace/BoqDataGrid.tsx
  *
  * Nidhivan Consulting — BOQ Data Grid (Cost Breakdown Structure)
@@ -334,7 +334,7 @@ function CategoryRow({ category, depth }: { category: BoqGroup; depth: number })
           </td>
 
           <td className="align-top px-6 py-3 pt-4 text-right tabular-nums">
-            {paiseToRupees(item.unitRatePaise)}
+            {paiseToRupees(item.ratePaise)}
           </td>
 
           <td className="align-top px-6 py-3 pt-4 text-right font-medium tabular-nums text-slate-800">

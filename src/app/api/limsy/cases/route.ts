@@ -1,4 +1,4 @@
-/**
+﻿/**
  * src/app/api/limsy/cases/route.ts
  *
  * LIMSY Supreme Court Standard — Case Workflow Automation API
@@ -38,6 +38,14 @@ import {
 } from "@/db/schema";
 import { asc, eq, and } from "drizzle-orm";
 import { getRequestContext, requireRole } from "@/lib/request-context";
+
+const PRIORITY_MAP = {
+  1: "critical",
+  2: "high",
+  3: "normal",
+  4: "low",
+  5: "low",
+} as const;
 
 export const dynamic = "force-dynamic";
 
@@ -131,7 +139,7 @@ async function _POST(req: NextRequest) {
   }
 
   // Optional status override — default is "intake" per schema
-  let status: (typeof VALID_LIMSY_CASE_STATUSES)[number] = "intake";
+  let status: (typeof VALID_LIMSY_CASE_STATUSES)[number] = "pending";
   if (body.status) {
     const trimmedStatus = String(body.status).trim();
     if (
@@ -249,7 +257,7 @@ async function _PATCH(req: NextRequest) {
   }
 
   if (body.nextHearingDate !== undefined) {
-    patch.nextHearingDate = body.nextHearingDate ? new Date(body.nextHearingDate) : null;
+    patch.nextHearingDate = body.nextHearingDate ? new Date(body.nextHearingDate).toISOString().split('T')[0] : null;
   }
 
   if (body.urgencyFlag !== undefined) {
@@ -264,7 +272,7 @@ async function _PATCH(req: NextRequest) {
         { status: 400 }
       );
     }
-    patch.priorityLevel = level;
+    patch.priorityLevel = PRIORITY_MAP[level as keyof typeof PRIORITY_MAP];
   }
 
   if (Object.keys(patch).length === 0) {
