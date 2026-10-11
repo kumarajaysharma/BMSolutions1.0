@@ -1,14 +1,17 @@
 /**
  * src/app/api/auth/login/route.ts
  *
- * Changes vs login-route-patched.ts:
- *   [ADR] bcryptjs import and bcrypt fallback branch removed.
- *         DB audit confirmed 0 bcrypt-prefixed password_hash rows (2026-10-09).
- *         scrypt is now the sole verification path per ADR.
- *   [FIX] export const runtime = 'nodejs' added.
- *         crypto.scrypt and promisify are Node.js builtins; Edge runtime
- *         does not expose them. Explicit declaration prevents silent fallback
- *         to Edge if the global Next.js runtime config ever changes.
+ * Changes vs login-route-final-v2.ts:
+ *   [FIX-RLS] Wrapped tenant + user lookup and session insert in
+ *             db.transaction() with set_config('app.current_tenant_id', ..., true).
+ *             Root cause: studio_app (non-BYPASSRLS) requires current_tenant_id
+ *             session context before RLS-gated users/sessions queries succeed.
+ *             The previous neondb_owner DATABASE_URL bypassed RLS silently;
+ *             switching to studio_app exposed the missing context.
+ *             set_config(..., true) = SET LOCAL — reverts at transaction end,
+ *             safe for pgbouncer transaction-mode pooling.
+ *             Password verification runs OUTSIDE the transaction to minimise
+ *             DB connection hold time during scrypt (~100 ms CPU).
  */
 
 // Must run on Node.js runtime — crypto.scrypt is not available on Edge.
@@ -17,12 +20,18 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { promisify } from "util";
+import { sql } from "drizzle-orm";
 import { getDb } from "@/db/index";
 import { users, sessions, tenants } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { createSessionCookie } from "@/lib/auth";
 
 type UserRow = typeof users.$inferSelect;
+type TenantRow = typeof tenants.$inferSelect;
+
+type LookupResult =
+  | { found: false }
+  | { found: true; tenant: TenantRow; user: UserRow };
 
 // Explicitly typed to include options parameter (fixes TS2554)
 const scryptAsync = promisify(crypto.scrypt) as (
@@ -57,75 +66,91 @@ export async function POST(request: Request) {
 
     const db = await getDb();
 
-    // 1. Resolve Tenant
-    const tenantRows = await db
-      .select()
-      .from(tenants)
-      .where(eq(tenants.slug, tenantSlug))
-      .limit(1);
+    // Pre-generate dummy hash OUTSIDE any transaction.
+    // Guarantees constant-time baseline regardless of which DB path executes.
+    const DUMMY_HASH = await generateScryptHash("__dummy__");
 
-    const tenantExists =
-      tenantRows.length > 0 && tenantRows[0].status === "active";
+    // ── Transaction 1: Resolve tenant + user (read-only, fast) ──────────────
+    // set_config(..., true) = SET LOCAL: context reverts when transaction ends.
+    // This satisfies RLS policies on the users table without leaking context
+    // to other pool connections (safe for pgbouncer transaction mode).
+    const lookup = await db.transaction(async (tx): Promise<LookupResult> => {
+      const tenantRows = await tx
+        .select()
+        .from(tenants)
+        .where(eq(tenants.slug, tenantSlug))
+        .limit(1);
 
-    // 2. Lookup User — only if tenant is valid
-    let userRows: UserRow[] = [];
-    if (tenantExists) {
-      userRows = await db
+      if (!tenantRows.length || tenantRows[0].status !== "active") {
+        return { found: false };
+      }
+
+      const tenant = tenantRows[0];
+
+      // Set RLS context — required for users SELECT under studio_app role.
+      await tx.execute(
+        sql`SELECT set_config('app.current_tenant_id', ${String(tenant.id)}, true)`
+      );
+
+      const userRows: UserRow[] = await tx
         .select()
         .from(users)
-        .where(
-          and(
-            eq(users.email, email),
-            eq(users.tenantId, tenantRows[0].id)
-          )
-        )
+        .where(and(eq(users.email, email), eq(users.tenantId, tenant.id)))
         .limit(1);
-    }
 
-    // 3. Verify Password (always runs to prevent timing oracle attacks)
-    //    scrypt is the sole verification path per ADR.
-    //    bcryptjs removed: DB audit confirmed 0 bcrypt hashes (2026-10-09).
-    const DUMMY_HASH = await generateScryptHash("__dummy__");
+      if (!userRows.length || !userRows[0].active) {
+        return { found: false };
+      }
+
+      return { found: true, tenant, user: userRows[0] };
+    });
+
+    // ── Password verification (outside transaction, CPU-bound ~100 ms) ───────
+    // Always runs against a valid hash to prevent timing oracle attacks.
     const storedHash =
-      userRows.length > 0 && userRows[0].passwordHash
-        ? userRows[0].passwordHash
+      lookup.found && lookup.user.passwordHash
+        ? lookup.user.passwordHash
         : DUMMY_HASH;
 
     const passwordMatch = await verifyScryptHash(password, storedHash);
 
-    if (
-      !passwordMatch ||
-      !tenantExists ||
-      userRows.length === 0 ||
-      !userRows[0].active
-    ) {
+    if (!passwordMatch || !lookup.found) {
       return enforcedDelay(
         NextResponse.json({ error: "Invalid credentials" }, { status: 401 }),
         start
       );
     }
 
-    const tenant = tenantRows[0];
-    const user = userRows[0];
+    const { tenant, user } = lookup;
 
-    // 4. Create DB Session Record — tokenHash = SHA-256(sessionId)  [TD-001 closed]
+    // ── Transaction 2: Insert session record ─────────────────────────────────
+    // sessions table is also RLS-gated; set context again for this transaction.
     const sessionId = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    await db.insert(sessions).values({
-      id: sessionId,
-      userId: user.id,
-      tenantId: tenant.id,
-      tokenHash: crypto.createHash("sha256").update(sessionId).digest("hex"),
-      expiresAt: expiresAt,
+    await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT set_config('app.current_tenant_id', ${String(tenant.id)}, true)`
+      );
+
+      await tx.insert(sessions).values({
+        id: sessionId,
+        userId: user.id,
+        tenantId: tenant.id,
+        tokenHash: crypto
+          .createHash("sha256")
+          .update(sessionId)
+          .digest("hex"),
+        expiresAt,
+      });
     });
 
-    // 5. Issue Encrypted JWT Cookie
+    // ── Issue Encrypted JWT Cookie (no DB access) ─────────────────────────────
     await createSessionCookie({
       userId: user.id.toString(),
       tenantId: tenant.id.toString(),
       role: user.role,
-      sessionId: sessionId,
+      sessionId,
     });
 
     return enforcedDelay(
@@ -141,7 +166,7 @@ export async function POST(request: Request) {
   }
 }
 
-// --- Security Helpers ---
+// ── Security Helpers ──────────────────────────────────────────────────────────
 
 async function enforcedDelay(
   response: NextResponse,
