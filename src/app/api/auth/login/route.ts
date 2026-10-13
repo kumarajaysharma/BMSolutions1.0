@@ -22,7 +22,7 @@ import crypto from "crypto";
 import { promisify } from "util";
 import { sql } from "drizzle-orm";
 import { getDb } from "@/db/index";
-import { users, sessions, tenants } from "@/db/schema";
+import { users, sessions, tenants, auditLogs } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { createSessionCookie } from "@/lib/auth";
 
@@ -123,8 +123,10 @@ export async function POST(request: Request) {
 
     const { tenant, user } = lookup;
 
-    // ── Transaction 2: Insert session record ─────────────────────────────────
-    // sessions table is also RLS-gated; set context again for this transaction.
+    // ── Transaction 2: Insert session + audit log ────────────────────────────
+    // sessions and audit_logs are both RLS-gated; set context once for both.
+    // Audit log on every successful login is required for banking/judicial grade
+    // compliance (ISO 27001 A.12.4, PCI-DSS Req 10.2.4).
     const sessionId = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -142,6 +144,17 @@ export async function POST(request: Request) {
           .update(sessionId)
           .digest("hex"),
         expiresAt,
+      });
+
+      await tx.insert(auditLogs).values({
+        tenantId:  tenant.id,
+        actor:     user.email,
+        action:    `auth.login:${user.id}`,
+        target:    `user:${user.id}`,
+        severity:  "info",
+        ipAddress: request.headers.get("x-forwarded-for")
+                     ?? request.headers.get("x-real-ip")
+                     ?? "unknown",
       });
     });
 

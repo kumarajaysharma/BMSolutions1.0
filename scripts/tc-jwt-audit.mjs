@@ -59,14 +59,17 @@ async function run() {
       console.log(`TC-048/049: FAIL (Invalid token structure. Parts found: ${parts}. Token prefix: ${token.slice(0, 40)}...)`);
     }
 
-    // TC-052: Audit log write (Wrapped safely so a missing column doesn't crash the script)
+    // TC-052: Audit log write on successful login.
+    // audit_logs schema: actor (text = email), action (text = "auth.login:<userId>")
+    // No user_id column — query by actor (email) and action prefix.
     try {
       const [audit] = await sql`
         SELECT action FROM audit_logs
-        WHERE user_id = ${user.id} AND action = 'login'
+        WHERE actor = ${email} AND action LIKE ${'auth.login:%'}
+        ORDER BY id DESC
         LIMIT 1
       `;
-      console.log(`TC-052 (Audit log write on login): ${audit ? "PASS" : "FAIL (no audit_logs row found)"}`);
+      console.log(`TC-052 (Audit log write on login): ${audit ? `PASS (action=${audit.action})` : "FAIL (no audit_logs row found — login route may not write audit log yet)"}`);
     } catch (e) {
       console.log(`TC-052 (Audit log write on login): SKIPPED (audit_logs table structure pending: ${e.message})`);
     }

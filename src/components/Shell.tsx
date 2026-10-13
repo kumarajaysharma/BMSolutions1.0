@@ -98,6 +98,7 @@ const NAV: NavGroup[] = [
     title: "LIMSY Legal",
     items: [
       { href: "/studio/limsy",              label: "LIMSY Studio",    icon: "âš–", hint: "Legal intelligence command" },
+      { href: "/studio/limsy/intake",       label: "Case Intake",     icon: "â†ˆ", hint: "e-Filing pipeline",         minRole: "developer" },
       { href: "/studio/limsy/matters",      label: "The Docket",      icon: "Â§", hint: "Case inception to closure" },
       { href: "/studio/limsy/trial",        label: "Trial Room",      icon: "â–£", hint: "Court in session",         minRole: "architect" },
       { href: "/studio/limsy/frameworks",   label: "Frameworks",      icon: "Â¶", hint: "IRAC / CREAC builder",     minRole: "architect" },

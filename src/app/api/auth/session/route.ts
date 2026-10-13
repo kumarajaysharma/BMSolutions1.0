@@ -99,8 +99,7 @@ export async function POST(req: NextRequest) {
   const now = new Date();
 
   try {
-    // Explicit array cast (as any[]) to resolve TS2488 error on unknown return type
-    const [row] = (await withTenant(String(tenantId), (tx) =>
+    const [row] = await withTenant(String(tenantId), (tx) =>
       tx
         .select({
           sessionId:  sessions.id,
@@ -122,7 +121,7 @@ export async function POST(req: NextRequest) {
           )
         )
         .limit(1)
-    )) as any[];
+    );
 
     if (!row) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
