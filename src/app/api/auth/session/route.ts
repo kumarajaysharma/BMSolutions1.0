@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decrypt } from "@/lib/auth";
-import { getDb } from "@/db/index";
+import { withTenant } from "@/db/index";
 import { sessions, users, tenants } from "@/db/schema";
 import { eq, and, gt } from "drizzle-orm";
 
@@ -70,7 +70,11 @@ export async function POST(req: NextRequest) {
   }
 
   // 2. Validate request body
-  let body: { tokenHash?: unknown };
+  //    Callers MUST supply both tokenHash and tenantId. The internal caller
+  //    already holds the JWT (and therefore tenantId) before invoking this
+  //    endpoint — passing it avoids the RLS bootstrap chicken-and-egg problem
+  //    and eliminates any dependency on SECURITY DEFINER functions. (ADR-001)
+  let body: { tokenHash?: unknown; tenantId?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -82,46 +86,56 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
   }
 
-  // 3. Strict Database Lookup
-  const now = new Date();
-  
-  try {
-    const db = await getDb();
-    const rows = await db
-      .select({
-        sessionId: sessions.id,
-        userId: sessions.userId,
-        tenantId: sessions.tenantId,
-        expiresAt: sessions.expiresAt,
-        role: users.role,
-        tenantSlug: tenants.slug,
-      })
-      .from(sessions)
-      .innerJoin(users, eq(sessions.userId, users.id))
-      .innerJoin(tenants, eq(sessions.tenantId, tenants.id))
-      .where(
-        and(
-          eq(sessions.tokenHash, tokenHash),
-          gt(sessions.expiresAt, now),
-          eq(users.active, true),
-          eq(tenants.status, "active")
-        )
-      )
-      .limit(1);
+  const rawTenantId = body.tenantId;
+  const tenantId    = Number(rawTenantId);
+  if (!rawTenantId || !Number.isInteger(tenantId) || tenantId <= 0) {
+    return NextResponse.json({ error: "Bad request" }, { status: 400 });
+  }
 
-    if (rows.length === 0) {
+  // 3. Strict Database Lookup — withTenant() sets app.current_tenant_id
+  //    before the query, satisfying both sessions_select and users_app_all
+  //    RLS policies. Token identity is pinned to the exact tokenHash — not
+  //    userId — to handle users with multiple concurrent sessions correctly.
+  const now = new Date();
+
+  try {
+    // Explicit array cast (as any[]) to resolve TS2488 error on unknown return type
+    const [row] = (await withTenant(String(tenantId), (tx) =>
+      tx
+        .select({
+          sessionId:  sessions.id,
+          userId:     sessions.userId,
+          tenantId:   sessions.tenantId,
+          expiresAt:  sessions.expiresAt,
+          role:       users.role,
+          tenantSlug: tenants.slug,
+        })
+        .from(sessions)
+        .innerJoin(users,   eq(sessions.userId,   users.id))
+        .innerJoin(tenants, eq(sessions.tenantId, tenants.id))
+        .where(
+          and(
+            eq(sessions.tokenHash,  tokenHash),
+            gt(sessions.expiresAt,  now),
+            eq(users.active,        true),
+            eq(tenants.status,      "active"),
+          )
+        )
+        .limit(1)
+    )) as any[];
+
+    if (!row) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const row = rows[0];
     return NextResponse.json({
       session: {
-        sessionId: row.sessionId,
-        userId: row.userId,
-        tenantId: row.tenantId,
+        sessionId:  row.sessionId,
+        userId:     row.userId,
+        tenantId:   row.tenantId,
         tenantSlug: row.tenantSlug,
-        role: row.role,
-        expiresAt: row.expiresAt.toISOString(),
+        role:       row.role,
+        expiresAt:  row.expiresAt.toISOString(),
       }
     });
 

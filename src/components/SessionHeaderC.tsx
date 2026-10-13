@@ -10,7 +10,7 @@
 
 import { cookies } from "next/headers";
 import { decrypt } from "@/lib/auth";
-import { getDb } from "@/db/index";
+import { withTenant } from "@/db/index";
 import { users, tenants } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import LogoutButton from "./LogoutButton";
@@ -47,18 +47,25 @@ export default async function SessionHeader() {
   const session = await decrypt(token);
   if (!session?.userId || !session?.tenantId) return null;
 
-  // 3. Read-only, pre-tenant-context lookup using the global pool
-  const db = await getDb();
-  const [userData] = await db
-    .select({
-      userName: users.name,
-      tenantName: tenants.name,
-      tenantSlug: tenants.slug,
-    })
-    .from(users)
-    .innerJoin(tenants, eq(users.tenantId, tenants.id))
-    .where(eq(users.id, Number(session.userId)))
-    .limit(1);
+  // 3. Tenant-scoped lookup — app.current_tenant_id must be set before
+  //    querying users/tenants (ADR-001 / sessions_select + users_app_all RLS).
+  //    withTenant() opens a transaction on the direct (unpooled) pool,
+  //    issues SET LOCAL set_config('app.current_tenant_id', tenantId, true),
+  //    then executes the query — guaranteeing RLS context is active.
+  
+  // Explicit array cast (as any[]) to resolve TS2488 error on unknown return type
+  const [userData] = (await withTenant(String(session.tenantId), (tx) =>
+    tx
+      .select({
+        userName: users.name,
+        tenantName: tenants.name,
+        tenantSlug: tenants.slug,
+      })
+      .from(users)
+      .innerJoin(tenants, eq(users.tenantId, tenants.id))
+      .where(eq(users.id, Number(session.userId)))
+      .limit(1)
+  )) as any[];
 
   if (!userData) return null;
 
