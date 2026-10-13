@@ -123,10 +123,10 @@ export async function POST(request: Request) {
 
     const { tenant, user } = lookup;
 
-    // ── Transaction 2: Insert session + audit log ────────────────────────────
-    // sessions and audit_logs are both RLS-gated; set context once for both.
-    // Audit log on every successful login is required for banking/judicial grade
-    // compliance (ISO 27001 A.12.4, PCI-DSS Req 10.2.4).
+    // ── Transaction 2: Insert session record (critical path) ─────────────────
+    // Isolated from the audit write: a DB permissions regression must NEVER
+    // block user login (fail-open for session, fail-closed is enforced at the
+    // audit layer via monitoring/alerting, not by denying auth).
     const sessionId = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -145,7 +145,17 @@ export async function POST(request: Request) {
           .digest("hex"),
         expiresAt,
       });
+    });
 
+    // ── Transaction 3: Audit log (non-critical, isolated) ────────────────────
+    // ISO 27001 A.12.4 / PCI-DSS Req 10.2.4 — every successful login is logged.
+    // Runs in its own transaction so a failure here CANNOT roll back the session.
+    // Failures are surfaced in server logs (not returned to client) and must be
+    // monitored and alerted on by the observability layer.
+    db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT set_config('app.current_tenant_id', ${String(tenant.id)}, true)`
+      );
       await tx.insert(auditLogs).values({
         tenantId:  tenant.id,
         actor:     user.email,
@@ -156,6 +166,9 @@ export async function POST(request: Request) {
                      ?? request.headers.get("x-real-ip")
                      ?? "unknown",
       });
+    }).catch((err) => {
+      // Audit failure must be visible in logs — never silently swallowed.
+      console.error(`[auth/login] AUDIT WRITE FAILED for user ${user.id} tenant ${tenant.id}:`, err);
     });
 
     // ── Issue Encrypted JWT Cookie (no DB access) ─────────────────────────────
