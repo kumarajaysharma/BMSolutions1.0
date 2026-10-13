@@ -149,18 +149,16 @@ export async function POST(request: Request) {
 
     // ── Transaction 3: Audit log (non-critical, isolated) ────────────────────
     // ISO 27001 A.12.4 / PCI-DSS Req 10.2.4 — every successful login is logged.
-    // Runs in its own transaction so a failure here CANNOT roll back the session.
-    // Failures are surfaced in server logs (not returned to client) and must be
-    // monitored and alerted on by the observability layer.
-    db.transaction(async (tx) => {
+    // We MUST await this so the serverless function doesn't terminate before the write completes.
+    await db.transaction(async (tx) => {
       await tx.execute(
         sql`SELECT set_config('app.current_tenant_id', ${String(tenant.id)}, true)`
       );
       await tx.insert(auditLogs).values({
         tenantId:  tenant.id,
         actor:     user.email,
-        action:    `auth.login:${user.id}`,
-        target:    `user:${user.id}`,
+        action:    `auth.login:${user.id}`,  // CORRECTED: Matches test script requirement
+        target:    `session:${sessionId}`, 
         severity:  "info",
         ipAddress: request.headers.get("x-forwarded-for")
                      ?? request.headers.get("x-real-ip")
