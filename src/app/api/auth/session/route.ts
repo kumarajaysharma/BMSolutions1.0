@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
   const now = new Date();
 
   try {
-    const [row] = await withTenant(String(tenantId), (tx) =>
+    const dbResult = await withTenant(String(tenantId), (tx) =>
       tx
         .select({
           sessionId:  sessions.id,
@@ -122,6 +122,9 @@ export async function POST(req: NextRequest) {
         )
         .limit(1)
     );
+
+    // Explicitly cast and extract the first row to satisfy TS2488
+    const row = (dbResult as any[])[0];
 
     if (!row) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });

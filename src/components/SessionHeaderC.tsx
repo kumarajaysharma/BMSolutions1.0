@@ -52,7 +52,7 @@ export default async function SessionHeader() {
   //    withTenant() opens a transaction on the direct (unpooled) pool,
   //    issues SET LOCAL set_config('app.current_tenant_id', tenantId, true),
   //    then executes the query — guaranteeing RLS context is active.
-  const [userData] = await withTenant(String(session.tenantId), (tx) =>
+  const dbResult = await withTenant(String(session.tenantId), (tx) =>
     tx
       .select({
         userName: users.name,
@@ -64,6 +64,9 @@ export default async function SessionHeader() {
       .where(eq(users.id, Number(session.userId)))
       .limit(1)
   );
+
+  // Explicitly cast and extract the first row to satisfy TS2488
+  const userData = (dbResult as any[])[0];
 
   if (!userData) return null;
 
