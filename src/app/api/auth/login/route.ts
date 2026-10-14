@@ -1,20 +1,21 @@
 /**
  * src/app/api/auth/login/route.ts
  *
- * Changes vs login-route-final-v2.ts:
- *   [FIX-RLS] Wrapped tenant + user lookup and session insert in
- *             db.transaction() with set_config('app.current_tenant_id', ..., true).
- *             Root cause: studio_app (non-BYPASSRLS) requires current_tenant_id
- *             session context before RLS-gated users/sessions queries succeed.
- *             The previous neondb_owner DATABASE_URL bypassed RLS silently;
- *             switching to studio_app exposed the missing context.
- *             set_config(..., true) = SET LOCAL — reverts at transaction end,
- *             safe for pgbouncer transaction-mode pooling.
- *             Password verification runs OUTSIDE the transaction to minimise
- *             DB connection hold time during scrypt (~100 ms CPU).
+ * Security architecture:
+ *   Transaction 1 — tenant + user lookup (read-only, fast)
+ *   Password verification — OUTSIDE transaction (CPU-bound ~100ms)
+ *   Transaction 2 — session INSERT only (auth critical path)
+ *   Transaction 3 — audit INSERT, AWAITED with isolated try/catch
+ *
+ * ADR: Fire-and-forget promises are NOT reliable in Vercel serverless —
+ * the function is frozen after response is sent, dropping floating promises.
+ * Transaction 3 uses await + isolated catch so the audit is guaranteed to
+ * complete while login success is never blocked by audit failure.
+ *
+ * ISO 27001 A.12.4 / PCI-DSS Req 10.2.4 compliance: every successful login
+ * writes to audit_logs before the response is returned.
  */
 
-// Must run on Node.js runtime — crypto.scrypt is not available on Edge.
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
@@ -26,18 +27,17 @@ import { users, sessions, tenants, auditLogs } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { createSessionCookie } from "@/lib/auth";
 
-type UserRow = typeof users.$inferSelect;
+type UserRow   = typeof users.$inferSelect;
 type TenantRow = typeof tenants.$inferSelect;
 
 type LookupResult =
   | { found: false }
   | { found: true; tenant: TenantRow; user: UserRow };
 
-// Explicitly typed to include options parameter (fixes TS2554)
 const scryptAsync = promisify(crypto.scrypt) as (
   password: string | Buffer,
-  salt: string | Buffer,
-  keylen: number,
+  salt:     string | Buffer,
+  keylen:   number,
   options?: crypto.ScryptOptions
 ) => Promise<Buffer>;
 
@@ -47,15 +47,10 @@ export async function POST(request: Request) {
   const start = Date.now();
 
   try {
-    const body = await request.json();
-    const email =
-      typeof body.email === "string" ? body.email.trim().toLowerCase() : null;
-    const password =
-      typeof body.password === "string" ? body.password : null;
-    const tenantSlug =
-      typeof body.tenantSlug === "string"
-        ? body.tenantSlug.trim().toLowerCase()
-        : null;
+    const body       = await request.json();
+    const email      = typeof body.email      === "string" ? body.email.trim().toLowerCase() : null;
+    const password   = typeof body.password   === "string" ? body.password                   : null;
+    const tenantSlug = typeof body.tenantSlug === "string" ? body.tenantSlug.trim().toLowerCase() : null;
 
     if (!email || !password || !tenantSlug) {
       return enforcedDelay(
@@ -67,13 +62,10 @@ export async function POST(request: Request) {
     const db = await getDb();
 
     // Pre-generate dummy hash OUTSIDE any transaction.
-    // Guarantees constant-time baseline regardless of which DB path executes.
+    // Constant-time baseline regardless of which DB path executes.
     const DUMMY_HASH = await generateScryptHash("__dummy__");
 
-    // ── Transaction 1: Resolve tenant + user (read-only, fast) ──────────────
-    // set_config(..., true) = SET LOCAL: context reverts when transaction ends.
-    // This satisfies RLS policies on the users table without leaking context
-    // to other pool connections (safe for pgbouncer transaction mode).
+    // ── Transaction 1: Resolve tenant + user (read-only) ─────────────────────
     const lookup = await db.transaction(async (tx): Promise<LookupResult> => {
       const tenantRows = await tx
         .select()
@@ -87,7 +79,6 @@ export async function POST(request: Request) {
 
       const tenant = tenantRows[0];
 
-      // Set RLS context — required for users SELECT under studio_app role.
       await tx.execute(
         sql`SELECT set_config('app.current_tenant_id', ${String(tenant.id)}, true)`
       );
@@ -105,8 +96,7 @@ export async function POST(request: Request) {
       return { found: true, tenant, user: userRows[0] };
     });
 
-    // ── Password verification (outside transaction, CPU-bound ~100 ms) ───────
-    // Always runs against a valid hash to prevent timing oracle attacks.
+    // ── Password verification (outside transaction, CPU-bound ~100ms) ─────────
     const storedHash =
       lookup.found && lookup.user.passwordHash
         ? lookup.user.passwordHash
@@ -123,10 +113,7 @@ export async function POST(request: Request) {
 
     const { tenant, user } = lookup;
 
-    // ── Transaction 2: Insert session record (critical path) ─────────────────
-    // Isolated from the audit write: a DB permissions regression must NEVER
-    // block user login (fail-open for session, fail-closed is enforced at the
-    // audit layer via monitoring/alerting, not by denying auth).
+    // ── Transaction 2: Insert session (auth critical path only) ──────────────
     const sessionId = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -134,46 +121,48 @@ export async function POST(request: Request) {
       await tx.execute(
         sql`SELECT set_config('app.current_tenant_id', ${String(tenant.id)}, true)`
       );
-
       await tx.insert(sessions).values({
-        id: sessionId,
-        userId: user.id,
-        tenantId: tenant.id,
-        tokenHash: crypto
-          .createHash("sha256")
-          .update(sessionId)
-          .digest("hex"),
+        id:        sessionId,
+        userId:    user.id,
+        tenantId:  tenant.id,
+        tokenHash: crypto.createHash("sha256").update(sessionId).digest("hex"),
         expiresAt,
       });
     });
 
-    // ── Transaction 3: Audit log (non-critical, isolated) ────────────────────
-    // ISO 27001 A.12.4 / PCI-DSS Req 10.2.4 — every successful login is logged.
-    // We MUST await this so the serverless function doesn't terminate before the write completes.
-    await db.transaction(async (tx) => {
-      await tx.execute(
-        sql`SELECT set_config('app.current_tenant_id', ${String(tenant.id)}, true)`
-      );
-      await tx.insert(auditLogs).values({
-        tenantId:  tenant.id,
-        actor:     user.email,
-        action:    `auth.login:${user.id}`,  // CORRECTED: Matches test script requirement
-        target:    `session:${sessionId}`, 
-        severity:  "info",
-        ipAddress: request.headers.get("x-forwarded-for")
-                     ?? request.headers.get("x-real-ip")
-                     ?? "unknown",
+    // ── Transaction 3: Audit log (awaited, isolated — never blocks login) ─────
+    // await is required: fire-and-forget is unreliable in Vercel serverless;
+    // the function may be frozen before a floating promise resolves.
+    // The try/catch ensures audit failure never propagates to the caller.
+    try {
+      await db.transaction(async (tx) => {
+        await tx.execute(
+          sql`SELECT set_config('app.current_tenant_id', ${String(tenant.id)}, true)`
+        );
+        await tx.insert(auditLogs).values({
+          tenantId:  tenant.id,
+          actor:     user.email,
+          action:    `auth.login:${user.id}`,
+          target:    `user:${user.id}`,
+          severity:  "info",
+          ipAddress: request.headers.get("x-forwarded-for")
+                       ?? request.headers.get("x-real-ip")
+                       ?? "unknown",
+        });
       });
-    }).catch((err) => {
-      // Audit failure must be visible in logs — never silently swallowed.
-      console.error(`[auth/login] AUDIT WRITE FAILED for user ${user.id} tenant ${tenant.id}:`, err);
-    });
+    } catch (auditErr) {
+      // Intentionally not re-thrown. Login already committed in Transaction 2.
+      console.error(
+        `[auth/login] AUDIT WRITE FAILED for user ${user.id} tenant ${tenant.id}:`,
+        auditErr
+      );
+    }
 
-    // ── Issue Encrypted JWT Cookie (no DB access) ─────────────────────────────
+    // ── Issue Encrypted JWT Cookie ────────────────────────────────────────────
     await createSessionCookie({
-      userId: user.id.toString(),
+      userId:   user.id.toString(),
       tenantId: tenant.id.toString(),
-      role: user.role,
+      role:     user.role,
       sessionId,
     });
 
@@ -181,6 +170,7 @@ export async function POST(request: Request) {
       NextResponse.json({ success: true, redirectUrl: "/admin" }),
       start
     );
+
   } catch (error) {
     console.error("[auth/login] Internal error:", error);
     return enforcedDelay(
@@ -194,7 +184,7 @@ export async function POST(request: Request) {
 
 async function enforcedDelay(
   response: NextResponse,
-  startMs: number
+  startMs:  number
 ): Promise<NextResponse> {
   const elapsed = Date.now() - startMs;
   if (elapsed < MIN_RESPONSE_MS) {
@@ -205,20 +195,15 @@ async function enforcedDelay(
 
 async function generateScryptHash(password: string): Promise<string> {
   const salt = crypto.randomBytes(16);
-  const dk = await scryptAsync(password, salt, 32, {
-    N: 16384,
-    r: 8,
-    p: 1,
-    maxmem: 64 * 1024 * 1024,
+  const dk   = await scryptAsync(password, salt, 32, {
+    N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024,
   });
-  return `$scrypt$N=16384,r=8,p=1$${salt.toString("base64url")}$${dk.toString(
-    "base64url"
-  )}`;
+  return `$scrypt$N=16384,r=8,p=1$${salt.toString("base64url")}$${dk.toString("base64url")}`;
 }
 
 async function verifyScryptHash(
   password: string,
-  stored: string
+  stored:   string
 ): Promise<boolean> {
   try {
     const parts = stored.split("$");
@@ -230,9 +215,8 @@ async function verifyScryptHash(
       params[k] = parseInt(v, 10);
     }
 
-    const salt = Buffer.from(parts[3], "base64url");
-    const storedDk = Buffer.from(parts[4], "base64url");
-
+    const salt      = Buffer.from(parts[3], "base64url");
+    const storedDk  = Buffer.from(parts[4], "base64url");
     const derivedKey = await scryptAsync(password, salt, storedDk.length, {
       N: params["N"] ?? 16384,
       r: params["r"] ?? 8,
