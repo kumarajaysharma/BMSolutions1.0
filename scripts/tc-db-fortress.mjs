@@ -32,34 +32,35 @@ async function run() {
     console.log(`TC-056 (Nidhivan Financials isolated): ${isolationResults[4][0].c === '0' ? "PASS" : "FAIL"}`);
     console.log(`TC-054 (Vault Secrets isolated): ${isolationResults[5][0].c === '0' ? "PASS" : "FAIL"}`);
 
-    // TC-057: Immutability (DELETE blocked)
+    // TC-057: Immutability — DELETE privilege revoked for studio_app on bms_certificates
+    // Uses has_table_privilege() catalog query — does not require an existing row or role
+    // switching via SET LOCAL ROLE (unreliable over Neon pooled connections).
+    // Migration 0022: REVOKE DELETE ON bms_certificates FROM studio_app
     try {
-      await sql.transaction([
-        sql`SET LOCAL ROLE studio_app`,
-        sql`DELETE FROM bms_certificates WHERE id = 1`
-      ]);
-      console.log(`TC-057 (DELETE bms_certificates): FAIL (Action was permitted!)`);
+      const tc057 = await sql`
+        SELECT has_table_privilege('studio_app', 'bms_certificates', 'delete') AS can_delete
+      `;
+      const canDelete = tc057[0].can_delete;
+      console.log(
+        `TC-057 (DELETE bms_certificates): ${canDelete === false ? "PASS (privilege revoked)" : "FAIL (privilege still granted)"}`
+      );
     } catch (e) {
-      if (e.message.includes("permission denied")) {
-        console.log(`TC-057 (DELETE bms_certificates): PASS (Permission denied)`);
-      } else {
-        console.log(`TC-057 (DELETE bms_certificates): ERROR (${e.message})`);
-      }
+      console.log(`TC-057 (DELETE bms_certificates): ERROR (${e.message})`);
     }
 
-    // TC-058: Immutability (TRUNCATE blocked)
+    // TC-058: Immutability — TRUNCATE privilege absent for studio_app on nidhivan_journals
+    // PostgreSQL does not grant TRUNCATE by default; this confirms it was never granted.
+    // has_table_privilege() supports 'truncate' as a valid privilege type (PG 9.0+).
     try {
-      await sql.transaction([
-        sql`SET LOCAL ROLE studio_app`,
-        sql`TRUNCATE nidhivan_journals`
-      ]);
-      console.log(`TC-058 (TRUNCATE nidhivan_journals): FAIL (Action was permitted!)`);
+      const tc058 = await sql`
+        SELECT has_table_privilege('studio_app', 'nidhivan_journals', 'truncate') AS can_truncate
+      `;
+      const canTruncate = tc058[0].can_truncate;
+      console.log(
+        `TC-058 (TRUNCATE nidhivan_journals): ${canTruncate === false ? "PASS (privilege absent)" : "FAIL (privilege present)"}`
+      );
     } catch (e) {
-      if (e.message.includes("permission denied")) {
-        console.log(`TC-058 (TRUNCATE nidhivan_journals): PASS (Permission denied)`);
-      } else {
-        console.log(`TC-058 (TRUNCATE nidhivan_journals): ERROR (${e.message})`);
-      }
+      console.log(`TC-058 (TRUNCATE nidhivan_journals): ERROR (${e.message})`);
     }
 
   } catch (err) {
