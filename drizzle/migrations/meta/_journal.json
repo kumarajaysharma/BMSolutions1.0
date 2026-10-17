@@ -120,6 +120,48 @@
       "when": 1790864840664,
       "tag": "0018_green_thor_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791000000000,
+      "tag": "0019_third_charles_xavier",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791100000000,
+      "tag": "0020_complex_terrax",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791200000000,
+      "tag": "0021_stormy_chronomancer",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791555000000,
+      "tag": "0022_security_hotfixes",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792195200000,
+      "tag": "0023_nidhivan_aiyyo_nidhi",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792627200000,
+      "tag": "0024_vt_n001_dpa_column",
+      "breakpoints": true
     }
   ]
 }

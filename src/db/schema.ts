@@ -1012,6 +1012,29 @@ export const nidhivanProjects = pgTable('nidhivan_projects', {
   metadata:          jsonb('metadata').$type<Record<string, unknown>>().default({}),
   createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt:         timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  // ── Aiyyo-Nidhi Extension (migration 0023) ──────────────────────────────────
+  // jurisdiction: ISO-3166 alpha-3 ('IND' | 'USA' | 'GBR' | 'CAN')
+  jurisdiction:            text('jurisdiction').notNull().default('IND'),
+  // currencyCode: ISO-4217 — monetary columns remain in paise; this tag drives
+  // conversion for cross-currency reporting (ADR-004 multi-currency extension)
+  currencyCode:            text('currency_code').notNull().default('INR'),
+  measurementSystem:       text('measurement_system').notNull().default('METRIC'),
+  // taxProfileId: FK → nidhivan_tax_profiles (forward ref — defined in section 11)
+  taxProfileId:            integer('tax_profile_id').references((): any => nidhivanTaxProfiles.id, { onDelete: 'set null' }),
+  placeOfSupplyStateCode:  text('place_of_supply_state_code').notNull().default(''),
+  originStateCode:         text('origin_state_code').notNull().default(''),
+  // GST routing: place_of_supply_state_code !== origin_state_code → IGST; else CGST+SGST
+  applyItTds194c:          boolean('apply_it_tds_194c').notNull().default(true),
+  applyGstTds:             boolean('apply_gst_tds').notNull().default(false),
+  applyLaborCess:          boolean('apply_labor_cess').notNull().default(true),
+  billingAdapterType:      text('billing_adapter_type').notNull().default('PERIODIC_RA'),
+  // ── VANTAI VT-N-001 DPDP DPA tracking (migration 0024) ─────────────────────
+  // DPDP Act 2023, S.4(1)(b): Data Fiduciary must have lawful basis before processing.
+  // Administrator sets vtN001DpaSigned=TRUE via PATCH /api/nidhivan/projects/:id after
+  // verifying a signed DPA document exists. vtN001DpaReference must be supplied.
+  vtN001DpaSigned:         boolean('vt_n001_dpa_signed').notNull().default(false),
+  vtN001DpaSignedAt:       timestamp('vt_n001_dpa_signed_at', { withTimezone: true }),
+  vtN001DpaReference:      text('vt_n001_dpa_reference'),
 });
 
 export const nidhivanBoqs = pgTable('nidhivan_boqs', {
@@ -1028,6 +1051,9 @@ export const nidhivanBoqs = pgTable('nidhivan_boqs', {
   createdAt:        timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt:        timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   dprId:            integer('dpr_id').references(() => nidhivanDprs.id),
+  // ── Aiyyo-Nidhi Extension (migration 0023) ──────────────────────────────────
+  jurisdiction:         text('jurisdiction').notNull().default('IND'),
+  billingAdapterType:   text('billing_adapter_type').notNull().default('PERIODIC_RA'),
 });
 
 export const nidhivanBoqItems = pgTable('nidhivan_boq_items', {
@@ -1047,6 +1073,12 @@ export const nidhivanBoqItems = pgTable('nidhivan_boq_items', {
   sectionCode:     text('section_code'),
   isSectionHeader: boolean('is_section_header').notNull().default(false),
   rateRef:         text('rate_ref'),
+  // ── Aiyyo-Nidhi Extension (migration 0023) ──────────────────────────────────
+  classificationCodeId: integer('classification_code_id').references((): any => nidhivanClassificationCodes.id, { onDelete: 'set null' }),
+  rateAuthorityId:      integer('rate_authority_id').references((): any => nidhivanRateAuthorities.id, { onDelete: 'set null' }),
+  currencyCode:         text('currency_code').notNull().default('INR'),
+  locationFactorId:     integer('location_factor_id').references((): any => nidhivanLocationFactors.id, { onDelete: 'set null' }),
+  sorYear:              text('sor_year').notNull().default(''),
 });
 
 export const nidhivanFinancialMetrics = pgTable('nidhivan_financial_metrics', {
@@ -1085,7 +1117,521 @@ export const nidhivanDprs = pgTable('nidhivan_dprs', {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 11. LIMSY LEGAL (MIGRATION 0019 + MIGRATION 0016 + 0018 MERGED)
+// 11. AIYYO-NIDHI FINANCIAL ENGINE (MIGRATION 0023)
+// ═══════════════════════════════════════════════════════════════
+// BNLV-COUNCIL-002 Phase 2 | 2026-10-16
+//
+// Q1 — Global Federated Classification & Rate Registry (7 tables)
+// Q2 — Tax Engine: Mixed GST Portfolio + RA Bills (3 tables)
+// Q3 — Maker-Checker-Approver 4-Eyes Approval Engine (3 tables)
+// Q4 — Milestone Gates + Project Advances (2 tables)
+// Q5 — ICAI CoA + Double-Entry Ledger + Tally Export (4 tables)
+//
+// ⚠  ADR-001 PRE-CONDITION (Gary Sobers Red Team):
+//    DATABASE_URL must use studio_app credentials (not neondb_owner).
+//    neondb_owner carries BYPASSRLS=TRUE — all RLS below is nullified.
+//    Verify `postgres://studio_app:...` prefix in Vercel + .env.local
+//    before any Aiyyo-Nidhi financial data is written to production.
+//
+// ADR-004: All monetary columns = BIGINT paise (₹1 = 100 paise).
+//          No DECIMAL / FLOAT for money anywhere.
+// ADR-006: Anthropic ONLY for financial/legal/DPDP AI routes.
+//          Gemini/GPT-4o/DeepSeek PROHIBITED for all VANTAI actions.
+// ═══════════════════════════════════════════════════════════════
+
+// ─── 11.1  ENUMS ────────────────────────────────────────────────
+
+// billing_type: PERIODIC (interim RA), MILESTONE (gate-linked), FINAL
+export const nidhivanBillingTypeEnum = pgEnum('nidhivan_billing_type', [
+  'PERIODIC', 'MILESTONE', 'FINAL',
+]);
+
+// RA bill lifecycle — VANTAI gates enforce transitions
+export const nidhivanRaBillStatusEnum = pgEnum('nidhivan_ra_bill_status', [
+  'DRAFT', 'SUBMITTED', 'UNDER_CHECK', 'CERTIFIED',
+  'APPROVED_FOR_PAYMENT', 'PAID', 'REJECTED',
+]);
+
+// approval_action: append-only audit record per maker/checker/approver action
+export const nidhivanApprovalActionEnum = pgEnum('nidhivan_approval_action', [
+  'SUBMITTED', 'L1_APPROVED', 'L2_APPROVED', 'L3_APPROVED',
+  'L4_APPROVED', 'REJECTED', 'RECALLED',
+]);
+
+// advance_type: MOBILISATION (upfront) | SECURED_MATERIAL (materials at site)
+export const nidhivanAdvanceTypeEnum = pgEnum('nidhivan_advance_type', [
+  'MOBILISATION', 'SECURED_MATERIAL',
+]);
+
+export const nidhivanAdvanceStatusEnum = pgEnum('nidhivan_advance_status', [
+  'PENDING', 'SANCTIONED', 'DISBURSED',
+  'PARTIALLY_RECOVERED', 'FULLY_RECOVERED', 'LAPSED',
+]);
+
+// ICAI account classification (5-element framework)
+export const nidhivanAccountTypeEnum = pgEnum('nidhivan_account_type', [
+  'ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE',
+]);
+
+// journal_voucher_type maps to Tally Prime Voucher Type
+export const nidhivanVoucherTypeEnum = pgEnum('nidhivan_voucher_type', [
+  'JOURNAL', 'PAYMENT', 'RECEIPT', 'CONTRA',
+  'DEBIT_NOTE', 'CREDIT_NOTE', 'RA_BILL_BOOKING',
+]);
+
+// Tally export queue state machine
+export const nidhivanSyncStatusEnum = pgEnum('nidhivan_sync_status', [
+  'PENDING', 'EXPORTED', 'FAILED', 'ACKNOWLEDGED',
+]);
+
+// ─── 11.2  Q1 — CLASSIFICATION & RATE REGISTRY ─────────────────
+
+// Global Federated Classification Registry
+// Supports: CPWD_DSR | CSI_MASTERFORMAT | RICS_NRM2 | CESMM4 | CUSTOM_CLIENT_WBS
+// tenant_id IS NULL = global system visible to all tenants (RLS NULL-aware policy)
+export const nidhivanClassificationSystems = pgTable('nidhivan_classification_systems', {
+  id:                serial('id').primaryKey(),
+  tenantId:          integer('tenant_id').references(() => tenants.id, { onDelete: 'restrict' }),
+  systemCode:        text('system_code').notNull(),
+  displayName:       text('display_name').notNull(),
+  jurisdiction:      text('jurisdiction').notNull().default('GLOBAL'),
+  measurementSystem: text('measurement_system').notNull().default('METRIC'),
+  description:       text('description').notNull().default(''),
+  isActive:          boolean('is_active').notNull().default(true),
+  isGlobal:          boolean('is_global').notNull().default(false),
+  version:           text('version').notNull().default(''),
+  createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:         timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Hierarchical classification codes (self-referencing adjacency list)
+// parent_id = null → root node; is_leaf = true → postable (rate schedule can attach)
+export const nidhivanClassificationCodes = pgTable('nidhivan_classification_codes', {
+  id:          serial('id').primaryKey(),
+  tenantId:    integer('tenant_id').references(() => tenants.id, { onDelete: 'restrict' }),
+  systemId:    integer('system_id').notNull().references(() => nidhivanClassificationSystems.id, { onDelete: 'restrict' }),
+  parentId:    integer('parent_id').references((): AnyPgColumn => nidhivanClassificationCodes.id, { onDelete: 'set null' }),
+  codeValue:   text('code_value').notNull(),
+  fullCode:    text('full_code').notNull().default(''),
+  description: text('description').notNull(),
+  shortDesc:   text('short_desc').notNull().default(''),
+  unit:        text('unit').notNull().default(''),
+  level:       integer('level').notNull().default(1),
+  isLeaf:      boolean('is_leaf').notNull().default(true),
+  isActive:    boolean('is_active').notNull().default(true),
+  metadata:    jsonb('metadata').$type<Record<string, unknown>>().default({}),
+  createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:   timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Rate-issuing authorities: e.g. CPWD_DSR_2023, RICS_NRM2_2022, CLIENT_CUSTOM
+export const nidhivanRateAuthorities = pgTable('nidhivan_rate_authorities', {
+  id:            serial('id').primaryKey(),
+  tenantId:      integer('tenant_id').references(() => tenants.id, { onDelete: 'restrict' }),
+  systemId:      integer('system_id').notNull().references(() => nidhivanClassificationSystems.id, { onDelete: 'restrict' }),
+  authorityCode: text('authority_code').notNull(),
+  displayName:   text('display_name').notNull(),
+  jurisdiction:  text('jurisdiction').notNull().default('IND'),
+  effectiveFrom: date('effective_from').notNull(),
+  effectiveTo:   date('effective_to'),
+  description:   text('description').notNull().default(''),
+  sourceUrl:     text('source_url').notNull().default(''),
+  isActive:      boolean('is_active').notNull().default(true),
+  createdAt:     timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:     timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Unit of Measurement definitions
+// Conversion stored as integer ratio: conversion_numerator / conversion_base
+// e.g. 1 m³ = 35314 / 1000 ft³ → numerator=35314, base=1000 (no float, ADR-004 spirit)
+export const nidhivanUomDefinitions = pgTable('nidhivan_uom_definitions', {
+  id:                  serial('id').primaryKey(),
+  tenantId:            integer('tenant_id').references(() => tenants.id, { onDelete: 'restrict' }),
+  uomCode:             text('uom_code').notNull(),
+  displayName:         text('display_name').notNull(),
+  measurementSystem:   text('measurement_system').notNull().default('METRIC'),
+  unitCategory:        text('unit_category').notNull().default(''),
+  conversionNumerator: integer('conversion_numerator').notNull().default(10000),
+  conversionBase:      integer('conversion_base').notNull().default(10000),
+  isActive:            boolean('is_active').notNull().default(true),
+  isGlobal:            boolean('is_global').notNull().default(false),
+  notes:               text('notes').notNull().default(''),
+  createdAt:           timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Rate schedule: base rate per classification code per authority per period
+// rate_minor_units: ADR-004 — paise (INR) / cents (USD) / pence (GBP)
+// labour/material/overhead pcts: real acceptable here — analysis percentages, NOT money
+export const nidhivanRateSchedules = pgTable('nidhivan_rate_schedules', {
+  id:                   serial('id').primaryKey(),
+  tenantId:             integer('tenant_id').references(() => tenants.id, { onDelete: 'restrict' }),
+  authorityId:          integer('authority_id').notNull().references(() => nidhivanRateAuthorities.id, { onDelete: 'restrict' }),
+  codeId:               integer('code_id').notNull().references(() => nidhivanClassificationCodes.id, { onDelete: 'restrict' }),
+  uomId:                integer('uom_id').references(() => nidhivanUomDefinitions.id, { onDelete: 'set null' }),
+  rateMinorUnits:       bigint('rate_minor_units', { mode: 'number' }).notNull().default(0),
+  currencyCode:         text('currency_code').notNull().default('INR'),
+  labourComponentPct:   real('labour_component_pct').notNull().default(0),
+  materialComponentPct: real('material_component_pct').notNull().default(0),
+  overheadComponentPct: real('overhead_component_pct').notNull().default(0),
+  analysisRef:          text('analysis_ref').notNull().default(''),
+  validFrom:            date('valid_from').notNull(),
+  validTo:              date('valid_to'),
+  isActive:             boolean('is_active').notNull().default(true),
+  metadata:             jsonb('metadata').$type<Record<string, unknown>>().default({}),
+  createdAt:            timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:            timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Location adjustment factors: integer ratio factor_numerator / factor_base
+// e.g. Mumbai high-cost zone 1.18x → numerator=11800, base=10000
+export const nidhivanLocationFactors = pgTable('nidhivan_location_factors', {
+  id:              serial('id').primaryKey(),
+  tenantId:        integer('tenant_id').references(() => tenants.id, { onDelete: 'restrict' }),
+  authorityId:     integer('authority_id').references(() => nidhivanRateAuthorities.id, { onDelete: 'set null' }),
+  locationCode:    text('location_code').notNull(),
+  locationName:    text('location_name').notNull(),
+  jurisdiction:    text('jurisdiction').notNull().default('IND'),
+  factorNumerator: integer('factor_numerator').notNull().default(10000),
+  factorBase:      integer('factor_base').notNull().default(10000),
+  effectiveFrom:   date('effective_from').notNull(),
+  effectiveTo:     date('effective_to'),
+  source:          text('source').notNull().default(''),
+  notes:           text('notes').notNull().default(''),
+  isActive:        boolean('is_active').notNull().default(true),
+  createdAt:       timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Currency exchange rates for multi-currency BNLV Group reporting
+// Rate stored as integer ratio: rate_numerator / rate_base (no float)
+// e.g. 1 USD = 84.12 INR → numerator=8412, base=100
+// rate_type: 'MONTH_CLOSE' | 'TRANSACTION' | 'BUDGET' | 'STANDARD'
+export const nidhivanCurrencyRates = pgTable('nidhivan_currency_rates', {
+  id:            serial('id').primaryKey(),
+  tenantId:      integer('tenant_id').references(() => tenants.id, { onDelete: 'restrict' }),
+  fromCurrency:  text('from_currency').notNull(),
+  toCurrency:    text('to_currency').notNull(),
+  rateNumerator: bigint('rate_numerator', { mode: 'number' }).notNull(),
+  rateBase:      integer('rate_base').notNull().default(10000),
+  rateType:      text('rate_type').notNull().default('MONTH_CLOSE'),
+  rateDate:      date('rate_date').notNull(),
+  source:        text('source').notNull().default(''),
+  createdAt:     timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  createdBy:     integer('created_by'),
+});
+
+// ─── 11.3  Q2 — TAX ENGINE ──────────────────────────────────────
+
+// Tax profiles: per-project GST and TDS configuration
+// Rates stored as basis points: 900 bps = 9.00% CGST, 1800 bps = 18% IGST
+// e_invoice_threshold_paise: ₹5Cr = 5,000,000,000 paise
+// GST routing: place_of_supply ≠ origin_state → IGST; else CGST+SGST
+// CGST Act Section 13(2): output GST booked immediately on advance receipt
+export const nidhivanTaxProfiles = pgTable('nidhivan_tax_profiles', {
+  id:                       serial('id').primaryKey(),
+  tenantId:                 integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  profileCode:              text('profile_code').notNull(),
+  displayName:              text('display_name').notNull(),
+  jurisdiction:             text('jurisdiction').notNull().default('IND'),
+  gstRateType:              text('gst_rate_type').notNull().default('WORKS_18'),
+  // GST components (basis points: 900 = 9.00%)
+  cgstRateBps:              integer('cgst_rate_bps').notNull().default(900),
+  sgstRateBps:              integer('sgst_rate_bps').notNull().default(900),
+  igstRateBps:              integer('igst_rate_bps').notNull().default(1800),
+  // TDS under IT Act Section 194C (basis points: 100 = 1.00%)
+  itTds194cRateBps:         integer('it_tds_194c_rate_bps').notNull().default(100),
+  // GST TDS under GST Act Section 51 (basis points: 200 = 2.00%)
+  gstTdsRateBps:            integer('gst_tds_rate_bps').notNull().default(200),
+  // BOCW Labour Cess (basis points: 100 = 1.00%)
+  laborCessRateBps:         integer('labor_cess_rate_bps').notNull().default(100),
+  // e-invoice mandatory threshold: ₹5Cr = 5,000,000,000 paise
+  eInvoiceThresholdPaise:   bigint('e_invoice_threshold_paise', { mode: 'number' }).notNull().default(5000000000),
+  mobilisationGstTreatment: text('mobilisation_gst_treatment').notNull().default('IMMEDIATE'),
+  isActive:                 boolean('is_active').notNull().default(true),
+  notes:                    text('notes').notNull().default(''),
+  createdAt:                timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:                timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// RA (Running Account) Bills — primary billing instrument for construction projects
+// VANTAI gates:
+//   VT-N-002: TDS 194C human gate → vt_n002_gate_passed must be TRUE before dispatch
+//   VT-N-003: GST e-invoice NIC IRP → e_invoice_irn populated before APPROVED_FOR_PAYMENT
+// content_hash: SHA-256 of bill content at certification (tamper evidence)
+// milestone_gate_id: forward ref (nidhivanMilestoneGates defined in section 11.5)
+// journal_voucher_id: forward ref (nidhivanJournalVouchers defined in section 11.6)
+export const nidhivanRaBills = pgTable('nidhivan_ra_bills', {
+  id:                     serial('id').primaryKey(),
+  tenantId:               integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  projectId:              integer('project_id').notNull().references(() => nidhivanProjects.id, { onDelete: 'restrict' }),
+  boqId:                  integer('boq_id').references(() => nidhivanBoqs.id, { onDelete: 'set null' }),
+  billNumber:             text('bill_number').notNull(),
+  billingType:            nidhivanBillingTypeEnum('billing_type').notNull().default('PERIODIC'),
+  status:                 nidhivanRaBillStatusEnum('status').notNull().default('DRAFT'),
+  billPeriodFrom:         date('bill_period_from'),
+  billPeriodTo:           date('bill_period_to'),
+  milestoneGateId:        integer('milestone_gate_id').references((): any => nidhivanMilestoneGates.id, { onDelete: 'set null' }),
+  // ADR-004: all monetary fields in paise
+  grossAmountPaise:       bigint('gross_amount_paise', { mode: 'number' }).notNull().default(0),
+  cgstPaise:              bigint('cgst_paise', { mode: 'number' }).notNull().default(0),
+  sgstPaise:              bigint('sgst_paise', { mode: 'number' }).notNull().default(0),
+  igstPaise:              bigint('igst_paise', { mode: 'number' }).notNull().default(0),
+  itTds194cPaise:         bigint('it_tds_194c_paise', { mode: 'number' }).notNull().default(0),
+  gstTdsPaise:            bigint('gst_tds_paise', { mode: 'number' }).notNull().default(0),
+  laborCessPaise:         bigint('labor_cess_paise', { mode: 'number' }).notNull().default(0),
+  netPayablePaise:        bigint('net_payable_paise', { mode: 'number' }).notNull().default(0),
+  placeOfSupplyStateCode: text('place_of_supply_state_code').notNull().default(''),
+  originStateCode:        text('origin_state_code').notNull().default(''),
+  // VT-N-002: TDS 194C human approval gate
+  vtN002GatePassed:       boolean('vt_n002_gate_passed').notNull().default(false),
+  vtN002PassedAt:         timestamp('vt_n002_passed_at', { withTimezone: true }),
+  vtN002PassedBy:         integer('vt_n002_passed_by'),
+  // VT-N-003: e-invoice IRN from NIC IRP
+  eInvoiceIrn:            text('e_invoice_irn').notNull().default(''),
+  eInvoiceAckNo:          text('e_invoice_ack_no').notNull().default(''),
+  eInvoiceAckAt:          timestamp('e_invoice_ack_at', { withTimezone: true }),
+  paidAt:                 timestamp('paid_at', { withTimezone: true }),
+  paymentRef:             text('payment_ref').notNull().default(''),
+  contentHash:            text('content_hash').notNull().default(''),
+  notes:                  text('notes').notNull().default(''),
+  journalVoucherId:       integer('journal_voucher_id').references((): any => nidhivanJournalVouchers.id, { onDelete: 'set null' }),
+  createdBy:              integer('created_by'),
+  createdAt:              timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:              timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// RA Bill deductions: line items subtracted from gross (TDS, advance recovery, retention)
+// advance_id: forward ref (nidhivanProjectAdvances defined in section 11.5)
+export const nidhivanRaBillDeductions = pgTable('nidhivan_ra_bill_deductions', {
+  id:            serial('id').primaryKey(),
+  tenantId:      integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  raBillId:      integer('ra_bill_id').notNull().references(() => nidhivanRaBills.id, { onDelete: 'cascade' }),
+  deductionType: text('deduction_type').notNull(),
+  description:   text('description').notNull(),
+  amountPaise:   bigint('amount_paise', { mode: 'number' }).notNull().default(0),
+  advanceId:     integer('advance_id').references((): any => nidhivanProjectAdvances.id, { onDelete: 'set null' }),
+  notes:         text('notes').notNull().default(''),
+  createdAt:     timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─── 11.4  Q3 — APPROVAL ENGINE ─────────────────────────────────
+
+// Delegation tiers: maps role_code to monetary authority ceiling
+// 4-Eyes protocol (BNLV group policy):
+//   ≤₹25L  (250,000,000 paise) = L1 + L2
+//   ≤₹1Cr  (1,000,000,000 paise) = L1 + L2 + L3
+//   >₹1Cr or >10% BOQ variation  = L1 + L2 + L3 + L4
+// Strict SOD: maker (L1 SUBMITTED) ≠ any approver role
+export const nidhivanDelegationTiers = pgTable('nidhivan_delegation_tiers', {
+  id:             serial('id').primaryKey(),
+  tenantId:       integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  tierLevel:      integer('tier_level').notNull(),
+  tierName:       text('tier_name').notNull(),
+  description:    text('description').notNull().default(''),
+  maxAmountPaise: bigint('max_amount_paise', { mode: 'number' }).notNull().default(0),
+  roleCode:       text('role_code').notNull(),
+  isActive:       boolean('is_active').notNull().default(true),
+  createdAt:      timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:      timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Per-project override of approval thresholds (client-mandate overrides BNLV group defaults)
+export const nidhivanApprovalThresholdRules = pgTable('nidhivan_approval_threshold_rules', {
+  id:                  serial('id').primaryKey(),
+  tenantId:            integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  projectId:           integer('project_id').references(() => nidhivanProjects.id, { onDelete: 'cascade' }),
+  entityId:            integer('entity_id').references(() => nidhivanEntities.id, { onDelete: 'cascade' }),
+  tier1MaxAmountPaise: bigint('tier1_max_amount_paise', { mode: 'number' }).notNull().default(250000000),   // ₹25L
+  tier2MaxAmountPaise: bigint('tier2_max_amount_paise', { mode: 'number' }).notNull().default(1000000000),  // ₹1Cr
+  variationPctForL4:   integer('variation_pct_for_l4').notNull().default(10),
+  isActive:            boolean('is_active').notNull().default(true),
+  createdAt:           timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:           timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// IMMUTABLE append-only approval audit log
+// Migration 0023 REVOKEs: UPDATE, DELETE, TRUNCATE on nidhivan_bill_approvals FROM studio_app
+// bill_hash_at_action: SHA-256 of bill state at moment of action (tamper detection)
+// signature: reserved for Phase 3 HSM/FIDO2 integration (empty until then)
+export const nidhivanBillApprovals = pgTable('nidhivan_bill_approvals', {
+  id:                  serial('id').primaryKey(),
+  tenantId:            integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  raBillId:            integer('ra_bill_id').notNull().references(() => nidhivanRaBills.id, { onDelete: 'restrict' }),
+  actorUserId:         integer('actor_user_id').notNull(),
+  actorRoleCode:       text('actor_role_code').notNull(),
+  action:              nidhivanApprovalActionEnum('action').notNull(),
+  tierLevel:           integer('tier_level').notNull().default(0),
+  comments:            text('comments').notNull().default(''),
+  amountAtActionPaise: bigint('amount_at_action_paise', { mode: 'number' }).notNull().default(0),
+  billHashAtAction:    text('bill_hash_at_action').notNull().default(''),
+  signature:           text('signature').notNull().default(''),
+  signatureAlgo:       text('signature_algo').notNull().default(''),
+  clientIp:            text('client_ip').notNull().default(''),
+  userAgent:           text('user_agent').notNull().default(''),
+  actedAt:             timestamp('acted_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─── 11.5  Q4 — MILESTONES & ADVANCES ───────────────────────────
+
+// Milestone gates: defines the payment schedule for MILESTONE billing type
+// cumulative_cap_pct: integer basis points of contract value (10000 bps = 100%)
+// cumulative_cap_paise: explicit paise cap (overrides pct when both are set)
+export const nidhivanMilestoneGates = pgTable('nidhivan_milestone_gates', {
+  id:                 serial('id').primaryKey(),
+  tenantId:           integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  projectId:          integer('project_id').notNull().references(() => nidhivanProjects.id, { onDelete: 'cascade' }),
+  gateSequence:       integer('gate_sequence').notNull().default(1),
+  gateName:           text('gate_name').notNull(),
+  description:        text('description').notNull().default(''),
+  cumulativeCapPct:   integer('cumulative_cap_pct').notNull().default(0),
+  cumulativeCapPaise: bigint('cumulative_cap_paise', { mode: 'number' }).notNull().default(0),
+  targetDate:         date('target_date'),
+  actualDate:         date('actual_date'),
+  isCompleted:        boolean('is_completed').notNull().default(false),
+  completedAt:        timestamp('completed_at', { withTimezone: true }),
+  completedBy:        integer('completed_by'),
+  isActive:           boolean('is_active').notNull().default(true),
+  notes:              text('notes').notNull().default(''),
+  createdAt:          timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:          timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Project advances: MOBILISATION + SECURED_MATERIAL
+// CGST Act Section 13(2): output GST booked on advance receipt (immediate)
+// outstanding_amount_paise = disbursed - recovered (app layer updates on each RA bill)
+// disbursement_journal_id: forward ref (nidhivanJournalVouchers defined in section 11.6)
+export const nidhivanProjectAdvances = pgTable('nidhivan_project_advances', {
+  id:                      serial('id').primaryKey(),
+  tenantId:                integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  projectId:               integer('project_id').notNull().references(() => nidhivanProjects.id, { onDelete: 'restrict' }),
+  advanceType:             nidhivanAdvanceTypeEnum('advance_type').notNull(),
+  status:                  nidhivanAdvanceStatusEnum('status').notNull().default('PENDING'),
+  advanceNumber:           text('advance_number').notNull(),
+  sanctionedAmountPaise:   bigint('sanctioned_amount_paise', { mode: 'number' }).notNull().default(0),
+  disbursedAmountPaise:    bigint('disbursed_amount_paise', { mode: 'number' }).notNull().default(0),
+  recoveredAmountPaise:    bigint('recovered_amount_paise', { mode: 'number' }).notNull().default(0),
+  outstandingAmountPaise:  bigint('outstanding_amount_paise', { mode: 'number' }).notNull().default(0),
+  // CGST Act Section 13(2) advance GST fields
+  cgstOnAdvancePaise:      bigint('cgst_on_advance_paise', { mode: 'number' }).notNull().default(0),
+  sgstOnAdvancePaise:      bigint('sgst_on_advance_paise', { mode: 'number' }).notNull().default(0),
+  igstOnAdvancePaise:      bigint('igst_on_advance_paise', { mode: 'number' }).notNull().default(0),
+  materialDescription:     text('material_description').notNull().default(''),
+  materialStorageLocation: text('material_storage_location').notNull().default(''),
+  inspectedBy:             integer('inspected_by'),
+  inspectedAt:             timestamp('inspected_at', { withTimezone: true }),
+  disbursementJournalId:   integer('disbursement_journal_id').references((): any => nidhivanJournalVouchers.id, { onDelete: 'set null' }),
+  sanctionedBy:            integer('sanctioned_by'),
+  sanctionedAt:            timestamp('sanctioned_at', { withTimezone: true }),
+  disbursedAt:             timestamp('disbursed_at', { withTimezone: true }),
+  notes:                   text('notes').notNull().default(''),
+  createdAt:               timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:               timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─── 11.6  Q5 — LEDGER ENGINE ───────────────────────────────────
+
+// ICAI Chart of Accounts (self-referencing adjacency list)
+// is_inter_company: flags inter-company nodes for VANTAI VT-N-004 consolidation
+// is_postable: false = control account (no direct DR/CR entries allowed)
+// normal_balance_dr: ASSET/EXPENSE=true, LIABILITY/EQUITY/INCOME=false
+// tally_ledger_name + tally_group_name: Tally Prime export mapping
+export const nidhivanChartOfAccounts = pgTable('nidhivan_chart_of_accounts', {
+  id:                   serial('id').primaryKey(),
+  tenantId:             integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  parentId:             integer('parent_id').references((): AnyPgColumn => nidhivanChartOfAccounts.id, { onDelete: 'set null' }),
+  accountCode:          text('account_code').notNull(),
+  accountName:          text('account_name').notNull(),
+  accountType:          nidhivanAccountTypeEnum('account_type').notNull(),
+  isControlAccount:     boolean('is_control_account').notNull().default(false),
+  isPostable:           boolean('is_postable').notNull().default(true),
+  isInterCompany:       boolean('is_inter_company').notNull().default(false),
+  interCompanyEntityId: integer('inter_company_entity_id').references(() => nidhivanEntities.id, { onDelete: 'set null' }),
+  tallyLedgerName:      text('tally_ledger_name').notNull().default(''),
+  tallyGroupName:       text('tally_group_name').notNull().default(''),
+  normalBalanceDr:      boolean('normal_balance_dr').notNull().default(true),
+  level:                integer('level').notNull().default(1),
+  isActive:             boolean('is_active').notNull().default(true),
+  description:          text('description').notNull().default(''),
+  createdAt:            timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:            timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Tally Prime export staging queue (one-way XML, no feedback loop from Tally to DB)
+// sync_status state machine: PENDING → EXPORTED → ACKNOWLEDGED (or FAILED → retry)
+// voucher_id: forward ref (nidhivanJournalVouchers defined below — circular with tallyExportId)
+// payload_hash: SHA-256 of tally_xml_payload (duplicate detection before retry)
+export const nidhivanTallyExportQueue = pgTable('nidhivan_tally_export_queue', {
+  id:                 serial('id').primaryKey(),
+  tenantId:           integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  voucherId:          integer('voucher_id').references((): any => nidhivanJournalVouchers.id, { onDelete: 'restrict' }),
+  tallyXmlPayload:    text('tally_xml_payload').notNull(),
+  syncStatus:         nidhivanSyncStatusEnum('sync_status').notNull().default('PENDING'),
+  tallyCompanyName:   text('tally_company_name').notNull().default(''),
+  tallyVoucherNumber: text('tally_voucher_number').notNull().default(''),
+  attempts:           integer('attempts').notNull().default(0),
+  lastAttemptAt:      timestamp('last_attempt_at', { withTimezone: true }),
+  lastError:          text('last_error').notNull().default(''),
+  exportedAt:         timestamp('exported_at', { withTimezone: true }),
+  acknowledgedAt:     timestamp('acknowledged_at', { withTimezone: true }),
+  payloadHash:        text('payload_hash').notNull().default(''),
+  createdAt:          timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:          timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Double-entry journal vouchers
+// Sum(total_debit_paise) = Sum(total_credit_paise) enforced at application layer
+// reversal_voucher_id: self-referencing FK for reversal pairs (both sides nullable)
+// ra_bill_id: links RA_BILL_BOOKING voucher type back to the source RA bill
+// tally_export_id: circular FK with nidhivan_tally_export_queue (both nullable)
+// is_posted: true only after approval passes and double-entry balance verified
+export const nidhivanJournalVouchers = pgTable('nidhivan_journal_vouchers', {
+  id:                serial('id').primaryKey(),
+  tenantId:          integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  projectId:         integer('project_id').references(() => nidhivanProjects.id, { onDelete: 'set null' }),
+  voucherNumber:     text('voucher_number').notNull(),
+  voucherType:       nidhivanVoucherTypeEnum('voucher_type').notNull().default('JOURNAL'),
+  voucherDate:       date('voucher_date').notNull(),
+  narration:         text('narration').notNull().default(''),
+  totalDebitPaise:   bigint('total_debit_paise', { mode: 'number' }).notNull().default(0),
+  totalCreditPaise:  bigint('total_credit_paise', { mode: 'number' }).notNull().default(0),
+  raBillId:          integer('ra_bill_id').references(() => nidhivanRaBills.id, { onDelete: 'set null' }),
+  preparedBy:        integer('prepared_by').notNull(),
+  reviewedBy:        integer('reviewed_by'),
+  approvedBy:        integer('approved_by'),
+  preparedAt:        timestamp('prepared_at', { withTimezone: true }).defaultNow().notNull(),
+  reviewedAt:        timestamp('reviewed_at', { withTimezone: true }),
+  approvedAt:        timestamp('approved_at', { withTimezone: true }),
+  tallyExportId:     integer('tally_export_id').references(() => nidhivanTallyExportQueue.id, { onDelete: 'set null' }),
+  isPosted:          boolean('is_posted').notNull().default(false),
+  isReversed:        boolean('is_reversed').notNull().default(false),
+  reversalVoucherId: integer('reversal_voucher_id').references((): AnyPgColumn => nidhivanJournalVouchers.id, { onDelete: 'set null' }),
+  fiscalYear:        text('fiscal_year').notNull().default(''),
+  createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:         timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// IMMUTABLE double-entry ledger (append-only)
+// Migration 0023 REVOKEs: DELETE, TRUNCATE on nidhivan_ledger_entries FROM studio_app
+// Exactly one of debit_paise / credit_paise > 0 per row (application-layer constraint)
+// line_hash: SHA-256(voucher_id || account_id || debit_paise || credit_paise || entry_date)
+// fiscal_year format: 'FY2026-27'; period format: 'P01'–'P12' within fiscal year
+export const nidhivanLedgerEntries = pgTable('nidhivan_ledger_entries', {
+  id:            serial('id').primaryKey(),
+  tenantId:      integer('tenant_id').notNull().references(() => tenants.id, { onDelete: 'restrict' }),
+  voucherId:     integer('voucher_id').notNull().references(() => nidhivanJournalVouchers.id, { onDelete: 'restrict' }),
+  accountId:     integer('account_id').notNull().references(() => nidhivanChartOfAccounts.id, { onDelete: 'restrict' }),
+  debitPaise:    bigint('debit_paise', { mode: 'number' }).notNull().default(0),
+  creditPaise:   bigint('credit_paise', { mode: 'number' }).notNull().default(0),
+  projectId:     integer('project_id').references(() => nidhivanProjects.id, { onDelete: 'set null' }),
+  lineNarration: text('line_narration').notNull().default(''),
+  entryDate:     date('entry_date').notNull(),
+  fiscalYear:    text('fiscal_year').notNull().default(''),
+  period:        text('period').notNull().default(''),
+  lineHash:      text('line_hash').notNull().default(''),
+  createdAt:     timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 12. LIMSY LEGAL (MIGRATION 0019 + MIGRATION 0016 + 0018 MERGED)
 // ═══════════════════════════════════════════════════════════════
 
 // ─── LIMSY VALIDATION CONSTANTS ──────────────────────────────
