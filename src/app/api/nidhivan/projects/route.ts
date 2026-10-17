@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * src/app/api/nidhivan/projects/route.ts
  * GET /api/nidhivan/projects

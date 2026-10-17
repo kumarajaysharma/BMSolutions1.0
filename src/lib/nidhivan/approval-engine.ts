@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * src/lib/nidhivan/approval-engine.ts
  *

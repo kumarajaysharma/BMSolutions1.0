@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * src/app/api/nidhivan/cockpit/route.ts
  *

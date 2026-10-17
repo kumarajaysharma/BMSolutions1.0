@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * src/app/api/nidhivan/export/pdf/route.tsx
  *

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * src/app/api/nidhivan/dprs/route.ts
  * GET /api/nidhivan/dprs

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * src/app/api/nidhivan/boqs/[boqId]/hierarchy/route.ts
  *

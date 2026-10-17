@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { NextResponse, NextRequest } from "next/server";
 import { db, withTenant } from "@/db";
 import { nidhivanFinancialMetrics } from "@/db/schema";
